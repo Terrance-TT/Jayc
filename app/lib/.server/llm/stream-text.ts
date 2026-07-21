@@ -21,9 +21,9 @@ export type Messages = Message[];
 
 export type StreamingOptions = Omit<Parameters<typeof _streamText>[0], 'model'>;
 
-export function streamText(messages: Messages, env: Env, options?: StreamingOptions) {
+export function streamText(messages: Messages, env: Env, options?: StreamingOptions, apiKey?: string) {
   return _streamText({
-    model: getMoonshotModel(getAPIKey(env)),
+    model: getMoonshotModel(apiKey || getAPIKey(env)),
     system: getSystemPrompt(),
     maxTokens: MAX_TOKENS,
     temperature: 1, // Kimi K3 requires temperature=1
