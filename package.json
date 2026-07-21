@@ -1,6 +1,6 @@
 {
-  "name": "bolt",
-  "description": "StackBlitz AI Agent",
+  "name": "jayc",
+  "description": "Jayc — AI app builder with enforced modular architecture (fork of bolt.new, running on Moonshot Kimi)",
   "private": true,
   "license": "MIT",
   "packageManager": "pnpm@9.4.0",
@@ -35,7 +35,7 @@
     "@codemirror/lang-python": "^6.1.6",
     "@codemirror/lang-sass": "^6.0.2",
     "@codemirror/lang-wast": "^6.0.2",
-    "@codemirror/language": "^6.10.2",
+    "@codemirror/language": "^6.10.0",
     "@codemirror/search": "^6.5.6",
     "@codemirror/state": "^6.4.1",
     "@codemirror/view": "^6.28.4",
@@ -77,7 +77,7 @@
     "unist-util-visit": "^5.0.0"
   },
   "devDependencies": {
-    "@blitz/eslint-plugin": "0.1.0",
+    "@blitz/eslint-plugin": "^0.1.0",
     "@cloudflare/workers-types": "^4.20240620.0",
     "@remix-run/dev": "^2.10.0",
     "@types/diff": "^5.2.1",
