@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react';
 import type { Message } from 'ai';
 import { useChat } from 'ai/react';
 import { useAnimate } from 'framer-motion';
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { cssTransition, toast, ToastContainer } from 'react-toastify';
 import { useMessageParser, usePromptEnhancer, useShortcuts, useSnapScroll } from '~/lib/hooks';
 import { useChatHistory } from '~/lib/persistence';
@@ -19,6 +19,57 @@ const toastAnimation = cssTransition({
 });
 
 const logger = createScopedLogger('Chat');
+
+/*
+ * Auto-resume: when the model's stream dies mid-response (token caps, CPU limits, network
+ * drops), the client automatically asks the model to continue. The synthetic user message
+ * below is an implementation detail of that mechanism.
+ */
+const CONTINUE_PROMPT =
+  'Continue your prior response. IMPORTANT: Immediately begin from where you left off without any interruptions. Do not repeat any content, including artifact and action tags.';
+
+const MAX_RESUME_ATTEMPTS = 8;
+const RESUME_DELAY_MS = 1500;
+
+/*
+ * Continuation turns arrive as separate messages (synthetic user prompt + new assistant
+ * reply). Stitching them back into one logical message lets the artifact parser resume
+ * exactly where the previous stream stopped - even in the middle of a file - instead of
+ * treating the continuation as standalone chat text.
+ */
+function mergeContinuationMessages(messages: Message[]): Message[] {
+  const merged: Message[] = [];
+
+  for (const message of messages) {
+    const previous = merged[merged.length - 1];
+
+    if (message.role === 'user' && message.content === CONTINUE_PROMPT && previous?.role === 'assistant') {
+      continue;
+    }
+
+    if (message.role === 'assistant' && previous?.role === 'assistant') {
+      merged[merged.length - 1] = { ...previous, content: previous.content + message.content };
+      continue;
+    }
+
+    merged.push(message);
+  }
+
+  return merged;
+}
+
+/*
+ * A response that stopped mid-artifact (or mid-file) has unbalanced bolt tags.
+ * A response that completed cleanly is always balanced.
+ */
+function hasUnclosedTags(content: string): boolean {
+  const artifactOpens = (content.match(/<boltArtifact\b/g) || []).length;
+  const artifactCloses = (content.match(/<\/boltArtifact>/g) || []).length;
+  const actionOpens = (content.match(/<boltAction\b/g) || []).length;
+  const actionCloses = (content.match(/<\/boltAction>/g) || []).length;
+
+  return artifactOpens > artifactCloses || actionOpens > actionCloses;
+}
 
 export function Chat() {
   renderLogger.trace('Chat');
@@ -75,34 +126,136 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
 
   const [animationScope, animate] = useAnimate();
 
-  const { messages, isLoading, input, handleInputChange, setInput, stop, append } = useChat({
+  /*
+   * Auto-resume bookkeeping (refs so the stream callbacks always see the latest values):
+   * - resumeAttempts: how many times we've auto-continued the current response
+   * - manualStopRef: true when the user pressed Stop - never resume after that
+   * - resumeTimeoutRef: pending delayed resume, so Stop/unmount can cancel it
+   * - messagesRef: latest messages array, avoiding stale closures in callbacks
+   */
+  const resumeAttempts = useRef(0);
+  const manualStopRef = useRef(false);
+  const resumeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const messagesRef = useRef<Message[]>([]);
+
+  const { messages, isLoading, input, handleInputChange, setInput, stop, reload, append } = useChat({
     api: '/api/chat',
     onError: (error) => {
       logger.error('Request failed\n\n', error);
+
+      if (manualStopRef.current) {
+        return;
+      }
+
+      const resumeMode = getResumeMode();
+
+      if (resumeMode) {
+        logger.debug(`Stream interrupted, auto-resuming (${resumeMode})`);
+        scheduleResume(resumeMode);
+        return;
+      }
+
       toast.error('There was an error processing your request');
     },
     onFinish: () => {
       logger.debug('Finished streaming');
+
+      if (manualStopRef.current) {
+        return;
+      }
+
+      const resumeMode = getResumeMode();
+
+      if (resumeMode) {
+        logger.debug(`Response truncated, auto-resuming (${resumeMode})`);
+        scheduleResume(resumeMode);
+      } else {
+        resumeAttempts.current = 0;
+      }
     },
     initialMessages,
   });
+
+  messagesRef.current = messages;
+
+  useEffect(() => {
+    return () => {
+      if (resumeTimeoutRef.current) {
+        clearTimeout(resumeTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  /*
+   * Decide whether the last exchange was cut off, and how to resume it:
+   * - 'reload': the assistant reply never materialized (or is empty) - drop the stub and retry.
+   * - 'append': the reply stopped mid-artifact - ask the model to continue exactly in place.
+   * - null: the response looks complete - do nothing.
+   */
+  const getResumeMode = (): 'append' | 'reload' | null => {
+    const currentMessages = messagesRef.current;
+    const lastMessage = currentMessages[currentMessages.length - 1];
+
+    if (!lastMessage) {
+      return null;
+    }
+
+    if (lastMessage.role === 'user' || !lastMessage.content) {
+      return 'reload';
+    }
+
+    if (hasUnclosedTags(lastMessage.content)) {
+      return 'append';
+    }
+
+    return null;
+  };
+
+  const scheduleResume = (mode: 'append' | 'reload') => {
+    if (resumeAttempts.current >= MAX_RESUME_ATTEMPTS) {
+      toast.error('Generation kept getting cut off. Please try again.');
+      return;
+    }
+
+    resumeAttempts.current += 1;
+    logger.debug(`Auto-resume attempt ${resumeAttempts.current}/${MAX_RESUME_ATTEMPTS} (${mode})`);
+
+    resumeTimeoutRef.current = setTimeout(() => {
+      if (manualStopRef.current) {
+        return;
+      }
+
+      if (mode === 'append') {
+        append({ role: 'user', content: CONTINUE_PROMPT });
+      } else {
+        reload();
+      }
+    }, RESUME_DELAY_MS);
+  };
 
   const { enhancingPrompt, promptEnhanced, enhancePrompt, resetEnhancer } = usePromptEnhancer();
   const { parsedMessages, parseMessages } = useMessageParser();
 
   const TEXTAREA_MAX_HEIGHT = chatStarted ? 400 : 200;
 
+  /*
+   * Merge continuation turns into single logical messages so both the artifact parser and the
+   * UI see one continuous response. This keeps parsedMessages indexes aligned with what we
+   * render below.
+   */
+  const displayMessages = useMemo(() => mergeContinuationMessages(messages), [messages]);
+
   useEffect(() => {
     chatStore.setKey('started', initialMessages.length > 0);
   }, []);
 
   useEffect(() => {
-    parseMessages(messages, isLoading);
+    parseMessages(displayMessages, isLoading);
 
     if (messages.length > initialMessages.length) {
-      storeMessageHistory(messages).catch((error) => toast.error(error.message));
+      storeMessageHistory(displayMessages).catch((error) => toast.error(error.message));
     }
-  }, [messages, isLoading, parseMessages]);
+  }, [displayMessages, isLoading, parseMessages]);
 
   const scrollTextArea = () => {
     const textarea = textareaRef.current;
@@ -113,6 +266,13 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
   };
 
   const abort = () => {
+    manualStopRef.current = true;
+
+    if (resumeTimeoutRef.current) {
+      clearTimeout(resumeTimeoutRef.current);
+      resumeTimeoutRef.current = null;
+    }
+
     stop();
     chatStore.setKey('aborted', true);
     workbenchStore.abortAllActions();
@@ -151,6 +311,15 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
 
     if (_input.length === 0 || isLoading) {
       return;
+    }
+
+    // A fresh user request resets the auto-resume bookkeeping.
+    resumeAttempts.current = 0;
+    manualStopRef.current = false;
+
+    if (resumeTimeoutRef.current) {
+      clearTimeout(resumeTimeoutRef.current);
+      resumeTimeoutRef.current = null;
     }
 
     /**
@@ -213,7 +382,7 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
       scrollRef={scrollRef}
       handleInputChange={handleInputChange}
       handleStop={abort}
-      messages={messages.map((message, i) => {
+      messages={displayMessages.map((message, i) => {
         if (message.role === 'user') {
           return message;
         }
