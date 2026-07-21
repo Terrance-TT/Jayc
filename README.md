@@ -26,6 +26,17 @@ Optional env vars (in `.env.local`):
 
 Note: `temperature` is pinned to `1` (Kimi K3 rejects any other value).
 
+## Deploy (Cloudflare Pages, free)
+
+```bash
+npx wrangler login                              # opens browser to authorize
+pnpm run deploy                                 # builds + deploys → https://<project>.pages.dev
+npx wrangler pages secret put MOONSHOT_API_KEY  # paste your Moonshot key when prompted
+pnpm run deploy                                 # redeploy so the secret goes live
+```
+
+The `public/_headers` file sets the COOP/COEP headers the in-browser WebContainer requires in production — do not remove it.
+
 ## License
 
 MIT — same as upstream bolt.new. See [LICENSE](./LICENSE).
