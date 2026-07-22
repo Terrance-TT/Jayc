@@ -1,8 +1,6 @@
 import { useStore } from '@nanostores/react';
-import type { LinksFunction, LoaderFunction } from '@remix-run/cloudflare';
+import type { LinksFunction } from '@remix-run/cloudflare';
 import { Links, Meta, Outlet, Scripts, ScrollRestoration } from '@remix-run/react';
-import { ClerkApp } from '@clerk/remix';
-import { rootAuthLoader } from '@clerk/remix/ssr.server';
 import tailwindReset from '@unocss/reset/tailwind-compat.css?url';
 import { themeStore } from './lib/stores/theme';
 import { stripIndents } from './utils/stripIndent';
@@ -14,8 +12,6 @@ import globalStyles from './styles/index.scss?url';
 import xtermStyles from '@xterm/xterm/css/xterm.css?url';
 
 import 'virtual:uno.css';
-
-export const loader: LoaderFunction = (args) => rootAuthLoader(args);
 
 export const links: LinksFunction = () => [
   {
@@ -82,8 +78,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
-function App() {
+export default function App() {
   return <Outlet />;
 }
-
-export default ClerkApp(App);

@@ -5,6 +5,4 @@ interface Env {
   MOONSHOT_RELAY?: string;
   MOONSHOT_PLANNER_MODEL?: string;
   MAX_TOKENS?: string;
-  CLERK_PUBLISHABLE_KEY?: string;
-  CLERK_SECRET_KEY?: string;
 }
