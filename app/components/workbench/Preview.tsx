@@ -72,10 +72,22 @@ export const Preview = memo(() => {
   };
 
   const openInNewTab = () => {
-    const targetUrl = iframeUrl ?? activePreview?.baseUrl;
+    if (!activePreview) {
+      return;
+    }
 
-    if (targetUrl) {
-      window.open(targetUrl, '_blank', 'noopener,noreferrer');
+    /*
+     * Credentialless WebContainer URLs 404 when opened as a top-level tab — they only
+     * resolve inside an iframe on the editor's origin. Route through the same-origin
+     * wrapper page instead, which embeds the preview in a full-page iframe.
+     */
+    const match = activePreview.baseUrl.match(/^https?:\/\/([^.]+)\.local-credentialless\.webcontainer-api\.io/);
+
+    if (match) {
+      window.open(`/webcontainer/preview/${match[1]}`, '_blank');
+    } else if (iframeUrl) {
+      // Non-credentialless preview URLs are standalone and can be opened directly.
+      window.open(iframeUrl, '_blank', 'noopener,noreferrer');
     }
   };
 
