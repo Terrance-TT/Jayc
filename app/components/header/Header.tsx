@@ -5,6 +5,7 @@ import { classNames } from '~/utils/classNames';
 import { HeaderActionButtons } from './HeaderActionButtons.client';
 import { SecretsPanel } from './SecretsPanel.client';
 import { ConnectorsPanel } from './ConnectorsPanel.client';
+import { AuthButton } from './AuthButton.client';
 import { ChatDescription } from '~/lib/persistence/ChatDescription.client';
 
 export function Header() {
@@ -44,6 +45,9 @@ export function Header() {
           )}
         </ClientOnly>
       )}
+      <div>
+        <ClientOnly>{() => <AuthButton />}</ClientOnly>
+      </div>
     </header>
   );
 }
