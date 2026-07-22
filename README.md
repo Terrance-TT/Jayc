@@ -30,6 +30,14 @@ Optional env vars (in `.env.local` or as Cloudflare Pages secrets):
 
 Note: `temperature` is pinned to `1` (Kimi K3 rejects any other value).
 
+## Database (optional)
+
+By default, projects are stored only in the browser's IndexedDB. To persist
+projects per signed-in user (Clerk) and sync them across devices, Jayc can use
+a **Cloudflare D1** database — see [DATABASE_SETUP.md](./DATABASE_SETUP.md)
+for the step-by-step setup (create the database, apply the migration, paste
+the `database_id` into `wrangler.toml`, redeploy).
+
 ## Deploy (Cloudflare Pages, free)
 
 ```bash

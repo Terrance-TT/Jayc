@@ -7,4 +7,5 @@ interface Env {
   MAX_TOKENS?: string;
   CLERK_PUBLISHABLE_KEY?: string;
   CLERK_SECRET_KEY?: string;
+  DB?: D1Database;
 }

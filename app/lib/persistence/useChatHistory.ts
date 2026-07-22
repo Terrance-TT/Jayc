@@ -5,6 +5,7 @@ import type { Message } from 'ai';
 import { toast } from 'react-toastify';
 import { workbenchStore } from '~/lib/stores/workbench';
 import { getMessages, getNextId, getUrlId, openDatabase, setMessages } from './db';
+import { syncProjectToCloud } from './cloudSync.client';
 
 export interface ChatHistoryItem {
   id: string;
@@ -92,6 +93,18 @@ export function useChatHistory() {
       }
 
       await setMessages(db, chatId.get() as string, messages, urlId, description.get());
+
+      // best-effort cloud backup — never blocks or breaks local persistence
+      syncProjectToCloud({
+        id: chatId.get() as string,
+        title: description.get(),
+        description: description.get(),
+        snapshot: {
+          messages,
+          description: description.get(),
+          timestamp: new Date().toISOString(),
+        },
+      }).catch(() => undefined);
     },
   };
 }
