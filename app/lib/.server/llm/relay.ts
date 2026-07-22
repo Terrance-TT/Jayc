@@ -27,7 +27,7 @@ const ARCHITECT_PROMPT = [
   '## 3. File-by-file design',
   'One entry for EVERY file in the app:',
   '- modules/<module>/src/<file>: what it does, its exports (names + signatures), and its imports.',
-  '  Imports may ONLY come from the same module or from another module\'s declared Outputs.',
+  "  Imports may ONLY come from the same module or from another module's declared Outputs.",
   '',
   '## 4. Data model & flows',
   'Schemas, key types, the auth flow, request/response shapes.',
@@ -37,7 +37,7 @@ const ARCHITECT_PROMPT = [
   '',
   'HARD RULES (state them in your plan; the builder MUST obey them):',
   '- Every module has a CONTRACT.md',
-  '- No file imports from another module\'s src/ - cross-module communication only via declared Outputs',
+  "- No file imports from another module's src/ - cross-module communication only via declared Outputs",
   '- Max 150 lines per file - if a file would exceed it, split it in your design',
   '- Only create modules the app actually needs',
   '',
@@ -49,6 +49,7 @@ const ARCHITECT_PROMPT = [
  * finished design (prefers the polished content; falls back to the raw
  * reasoning if the budget ran out mid-reasoning). Returns null on any
  * failure so the caller can fall back to a direct build.
+ * Cloudflare env takes precedence over process env (which is empty on Pages).
  */
 export async function getArchitectPlan(messages: SimpleMessage[], env: Env): Promise<string | null> {
   const apiKey = getAPIKey(env);
@@ -57,8 +58,8 @@ export async function getArchitectPlan(messages: SimpleMessage[], env: Env): Pro
     return null;
   }
 
-  const baseURL = processEnv.MOONSHOT_BASE_URL || 'https://api.moonshot.ai/v1';
-  const plannerModel = processEnv.MOONSHOT_PLANNER_MODEL || 'kimi-k3';
+  const baseURL = env.MOONSHOT_BASE_URL || processEnv.MOONSHOT_BASE_URL || 'https://api.moonshot.ai/v1';
+  const plannerModel = env.MOONSHOT_PLANNER_MODEL || processEnv.MOONSHOT_PLANNER_MODEL || 'kimi-k3';
 
   try {
     const res = await fetch(`${baseURL}/chat/completions`, {

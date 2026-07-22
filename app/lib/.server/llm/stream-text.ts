@@ -30,8 +30,11 @@ export async function streamText(messages: Messages, env: Env, options?: Streami
    * an architecture plan, then the builder model (MOONSHOT_MODEL, e.g.
    * kimi-k2.6) executes it. Relay only triggers on the first user message of a
    * chat; continuations and follow-up turns go straight to the builder.
+   * Cloudflare env takes precedence over process env (which is empty on Pages).
    */
-  if (processEnv.MOONSHOT_RELAY === '1' && messages.length === 1 && messages[0].role === 'user') {
+  const relayEnabled = (env.MOONSHOT_RELAY || processEnv.MOONSHOT_RELAY) === '1';
+
+  if (relayEnabled && messages.length === 1 && messages[0].role === 'user') {
     const plan = await getArchitectPlan(messages, env);
 
     if (plan) {
@@ -45,7 +48,7 @@ export async function streamText(messages: Messages, env: Env, options?: Streami
   }
 
   return _streamText({
-    model: getMoonshotModel(getAPIKey(env)),
+    model: getMoonshotModel(getAPIKey(env), env),
     system: getSystemPrompt(),
     maxTokens: MAX_TOKENS,
     temperature: 1, // Kimi K3 requires temperature=1
