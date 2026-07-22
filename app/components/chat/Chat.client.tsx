@@ -245,6 +245,17 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
    */
   const displayMessages = useMemo(() => mergeContinuationMessages(messages), [messages]);
 
+  /*
+   * Stream phase for the activity indicator, derived from the RAW message content: while we
+   * wait for the first token (K3 architect planning, or plain model latency) we're "thinking";
+   * once the builder starts streaming actual content we're "building".
+   */
+  const lastDisplayMessage = displayMessages[displayMessages.length - 1];
+  const streamPhase: 'thinking' | 'building' =
+    isLoading && lastDisplayMessage?.role === 'assistant' && lastDisplayMessage.content.length > 0
+      ? 'building'
+      : 'thinking';
+
   useEffect(() => {
     chatStore.setKey('started', initialMessages.length > 0);
   }, []);
@@ -375,6 +386,7 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
       showChat={showChat}
       chatStarted={chatStarted}
       isStreaming={isLoading}
+      streamPhase={streamPhase}
       enhancingPrompt={enhancingPrompt}
       promptEnhanced={promptEnhanced}
       sendMessage={sendMessage}
