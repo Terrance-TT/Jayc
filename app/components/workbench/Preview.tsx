@@ -77,18 +77,16 @@ export const Preview = memo(() => {
     }
 
     /*
-     * Credentialless WebContainer URLs 404 when opened as a top-level tab — they only
-     * resolve inside an iframe on the editor's origin. Route through the same-origin
-     * wrapper page instead, which embeds the preview in a full-page iframe.
+     * WebContainer preview URLs 404 when opened as a top-level tab — they only
+     * resolve inside an iframe on the editor's origin. Route through the
+     * same-origin wrapper page instead, which embeds the preview in a
+     * full-page iframe. The full URL is passed along so any WebContainer URL
+     * format works; fall back to the base URL if the address bar holds an
+     * invalid entry.
      */
-    const match = activePreview.baseUrl.match(/^https?:\/\/([^.]+)\.local-credentialless\.webcontainer-api\.io/);
+    const targetUrl = iframeUrl && validateUrl(iframeUrl) ? iframeUrl : activePreview.baseUrl;
 
-    if (match) {
-      window.open(`/webcontainer/preview/${match[1]}`, '_blank');
-    } else if (iframeUrl) {
-      // Non-credentialless preview URLs are standalone and can be opened directly.
-      window.open(iframeUrl, '_blank', 'noopener,noreferrer');
-    }
+    window.open(`/webcontainer/preview?url=${encodeURIComponent(targetUrl)}`, '_blank');
   };
 
   return (
