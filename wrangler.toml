@@ -7,5 +7,5 @@ pages_build_output_dir = "./build/client"
 [[d1_databases]]
 binding = "DB"
 database_name = "jayc-db"
-database_id = "REPLACE_WITH_YOUR_D1_ID"
+database_id = "8053e751-6dc2-4a70-a94d-7cc2badaa007"
 migrations_dir = "migrations"
