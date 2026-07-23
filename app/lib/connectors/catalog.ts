@@ -222,3 +222,25 @@ export function getConnector(id: string): Connector | undefined {
 export function isConnectorConnected(connector: Connector, vars: Record<string, string>): boolean {
   return connector.envKeys.filter((key) => !key.optional).every((key) => Boolean(vars[key.name]?.trim()));
 }
+
+/** find a variable's catalog entry by name (custom variables are not in the catalog) */
+export function getCatalogEnvKey(name: string): ConnectorEnvKey | undefined {
+  for (const connector of CONNECTORS) {
+    const match = connector.envKeys.find((envKey) => envKey.name === name);
+
+    if (match) {
+      return match;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * A variable only counts as publishable (safe to ship in a browser bundle) when its
+ * catalog entry explicitly says so. Catalog entries without the flag — and custom
+ * variables the catalog doesn't know — are treated as server-only secrets.
+ */
+export function isPublishableEnvKey(name: string): boolean {
+  return getCatalogEnvKey(name)?.publishable === true;
+}
