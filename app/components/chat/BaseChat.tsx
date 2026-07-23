@@ -3,7 +3,6 @@ import React, { type RefCallback } from 'react';
 import { ClientOnly } from 'remix-utils/client-only';
 import { toast } from 'react-toastify';
 import { Menu } from '~/components/sidebar/Menu.client';
-import { IconButton } from '~/components/ui/IconButton';
 import { Workbench } from '~/components/workbench/Workbench.client';
 import { classNames } from '~/utils/classNames';
 import { looksLikeSecret } from '~/utils/secretPatterns';
@@ -21,13 +20,10 @@ interface BaseChatProps {
   isStreaming?: boolean;
   streamPhase?: 'thinking' | 'building';
   messages?: Message[];
-  enhancingPrompt?: boolean;
-  promptEnhanced?: boolean;
   input?: string;
   handleStop?: () => void;
   sendMessage?: (event: React.UIEvent, messageInput?: string) => void;
   handleInputChange?: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
-  enhancePrompt?: () => void;
 }
 
 const EXAMPLE_PROMPTS = [
@@ -50,13 +46,10 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       chatStarted = false,
       isStreaming = false,
       streamPhase = 'thinking',
-      enhancingPrompt = false,
-      promptEnhanced = false,
       messages,
       input = '',
       sendMessage,
       handleInputChange,
-      enhancePrompt,
       handleStop,
     },
     ref,
@@ -168,31 +161,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                       />
                     )}
                   </ClientOnly>
-                  <div className="flex justify-between text-sm p-4 pt-2">
-                    <div className="flex gap-1 items-center">
-                      <IconButton
-                        title="Enhance prompt"
-                        disabled={input.length === 0 || enhancingPrompt}
-                        className={classNames({
-                          'opacity-100!': enhancingPrompt,
-                          'text-bolt-elements-item-contentAccent! pr-1.5 enabled:hover:bg-bolt-elements-item-backgroundAccent!':
-                            promptEnhanced,
-                        })}
-                        onClick={() => enhancePrompt?.()}
-                      >
-                        {enhancingPrompt ? (
-                          <>
-                            <div className="i-svg-spinners:90-ring-with-bg text-bolt-elements-loader-progress text-xl"></div>
-                            <div className="ml-1.5">Enhancing prompt...</div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="i-bolt:stars text-xl"></div>
-                            {promptEnhanced && <div className="ml-1.5">Prompt enhanced</div>}
-                          </>
-                        )}
-                      </IconButton>
-                    </div>
+                  <div className="flex justify-end text-sm p-4 pt-2">
                     {input.length > 3 ? (
                       <div className="text-xs text-bolt-elements-textTertiary">
                         Use <kbd className="kdb">Shift</kbd> + <kbd className="kdb">Return</kbd> for a new line

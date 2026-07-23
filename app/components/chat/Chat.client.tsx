@@ -4,7 +4,7 @@ import { useChat } from 'ai/react';
 import { useAnimate } from 'framer-motion';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { cssTransition, toast, ToastContainer } from 'react-toastify';
-import { useMessageParser, usePromptEnhancer, useShortcuts, useSnapScroll } from '~/lib/hooks';
+import { useMessageParser, useShortcuts, useSnapScroll } from '~/lib/hooks';
 import { useChatHistory } from '~/lib/persistence';
 import { chatStore } from '~/lib/stores/chat';
 import { workbenchStore } from '~/lib/stores/workbench';
@@ -234,7 +234,6 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
     }, RESUME_DELAY_MS);
   };
 
-  const { enhancingPrompt, promptEnhanced, enhancePrompt, resetEnhancer } = usePromptEnhancer();
   const { parsedMessages, parseMessages } = useMessageParser();
 
   const TEXTAREA_MAX_HEIGHT = chatStarted ? 400 : 200;
@@ -268,14 +267,6 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
       storeMessageHistory(displayMessages).catch((error) => toast.error(error.message));
     }
   }, [displayMessages, isLoading, parseMessages]);
-
-  const scrollTextArea = () => {
-    const textarea = textareaRef.current;
-
-    if (textarea) {
-      textarea.scrollTop = textarea.scrollHeight;
-    }
-  };
 
   const abort = () => {
     manualStopRef.current = true;
@@ -392,8 +383,6 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
 
     setInput('');
 
-    resetEnhancer();
-
     textareaRef.current?.blur();
   };
 
@@ -408,8 +397,6 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
       chatStarted={chatStarted}
       isStreaming={isLoading}
       streamPhase={streamPhase}
-      enhancingPrompt={enhancingPrompt}
-      promptEnhanced={promptEnhanced}
       sendMessage={sendMessage}
       messageRef={messageRef}
       scrollRef={scrollRef}
@@ -425,12 +412,6 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
           content: parsedMessages[i] || '',
         };
       })}
-      enhancePrompt={() => {
-        enhancePrompt(input, (input) => {
-          setInput(input);
-          scrollTextArea();
-        });
-      }}
     />
   );
 });
