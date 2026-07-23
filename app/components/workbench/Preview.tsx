@@ -16,19 +16,25 @@ export const Preview = memo(() => {
   const [url, setUrl] = useState('');
   const [iframeUrl, setIframeUrl] = useState<string | undefined>();
 
+  /*
+   * Only reset the address bar / iframe when the preview's base URL actually
+   * changes (new server, new port). Depending on the preview object identity
+   * or on iframeUrl here caused the preview to snap back to the base URL on
+   * every port event and after every manual navigation.
+   */
+  const activePreviewBaseUrl = activePreview?.baseUrl;
+
   useEffect(() => {
-    if (!activePreview) {
+    if (!activePreviewBaseUrl) {
       setUrl('');
       setIframeUrl(undefined);
 
       return;
     }
 
-    const { baseUrl } = activePreview;
-
-    setUrl(baseUrl);
-    setIframeUrl(baseUrl);
-  }, [activePreview, iframeUrl]);
+    setUrl(activePreviewBaseUrl);
+    setIframeUrl(activePreviewBaseUrl);
+  }, [activePreviewBaseUrl]);
 
   const validateUrl = useCallback(
     (value: string) => {
@@ -72,9 +78,20 @@ export const Preview = memo(() => {
   };
 
   const openInNewTab = () => {
-    if (iframeUrl) {
-      window.open(iframeUrl, '_blank', 'noopener,noreferrer');
+    if (!activePreview) {
+      return;
     }
+
+    /*
+     * WebContainer preview URLs 404 when opened as a top-level tab — they only
+     * resolve inside an iframe on the editor's origin. Route through the
+     * same-origin wrapper page (/webcontainer/preview?url=...), which embeds
+     * the preview in a full-page iframe. Fall back to the base URL if the
+     * address bar holds an invalid entry.
+     */
+    const targetUrl = iframeUrl && validateUrl(iframeUrl) ? iframeUrl : activePreview.baseUrl;
+
+    window.open(`/webcontainer/preview?url=${encodeURIComponent(targetUrl)}`, '_blank');
   };
 
   return (
@@ -84,7 +101,12 @@ export const Preview = memo(() => {
       )}
       <div className="bg-bolt-elements-background-depth-2 p-2 flex items-center gap-1.5">
         <IconButton icon="i-ph:arrow-clockwise" title="Reload preview" onClick={reloadPreview} />
-        <IconButton icon="i-ph:arrow-square-out" title="Open preview in new tab" disabled={!iframeUrl} onClick={openInNewTab} />
+        <IconButton
+          icon="i-ph:arrow-square-out"
+          title="Open preview in new tab"
+          disabled={!activePreview}
+          onClick={openInNewTab}
+        />
         <div
           className="flex items-center gap-1 flex-grow bg-bolt-elements-preview-addressBar-background border border-bolt-elements-borderColor text-bolt-elements-preview-addressBar-text rounded-full px-3 py-1 text-sm hover:bg-bolt-elements-preview-addressBar-backgroundHover hover:focus-within:bg-bolt-elements-preview-addressBar-backgroundActive focus-within:bg-bolt-elements-preview-addressBar-backgroundActive
         focus-within-border-bolt-elements-borderColorActive focus-within:text-bolt-elements-preview-addressBar-textActive"
