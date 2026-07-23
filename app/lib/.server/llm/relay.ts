@@ -1,5 +1,6 @@
 import { env as processEnv } from 'node:process';
 import { getAPIKey } from './api-key';
+import { MAX_RESPONSE_SEGMENTS, MAX_TOKENS } from './constants';
 import { estimateComplexity, plannerBudgetFor } from './effort';
 
 interface SimpleMessage {
@@ -35,6 +36,7 @@ const ARCHITECT_PROMPT = [
   '',
   '## 5. Build order',
   'Exact order to create files: CONTRACT.md files first, then leaf modules, then modules that depend on them.',
+  'Order features essentials-first: the core user flow must work end-to-end before any secondary feature or polish is started, so the app is runnable no matter where the build stops.',
   '',
   'HARD RULES (state them in your plan; the builder MUST obey them):',
   '- Every module has a CONTRACT.md',
@@ -44,6 +46,31 @@ const ARCHITECT_PROMPT = [
   '',
   'Be thorough but concise. Signatures and types, yes - full code implementations, no. Output the design only.',
 ].join('\n');
+
+/**
+ * Appends the token-budget section to the architect prompt. The architect is
+ * the only one who knows the full scope of the app, so IT allocates the
+ * builder's output budget across files: an estimated token cost per file, an
+ * [ESSENTIAL]/[OPTIONAL] tag per file, and a total that fits inside the
+ * builder's real budget with headroom. If the app doesn't fit, the architect
+ * must shrink SCOPE (fewer optional features) - never the quality of
+ * essential files. Budgets are rough on purpose: they exist so the builder
+ * can prioritize and so a truncated build still yields a runnable core.
+ */
+function buildArchitectPrompt(): string {
+  const builderBudget = MAX_TOKENS * MAX_RESPONSE_SEGMENTS;
+  const planBudget = Math.floor(builderBudget * 0.75);
+
+  return `${ARCHITECT_PROMPT}
+
+## 6. Token budget
+The builder has a hard total output budget of ~${builderBudget} tokens for the ENTIRE app. You are the budget authority:
+- In the file-by-file design, end every file entry with its estimated output cost in tokens (a typical 100-150 line file costs 800-2000 tokens) and a tag: [ESSENTIAL] or [OPTIONAL].
+- [ESSENTIAL] = the app is broken without it (contracts, core flow, wiring). [OPTIONAL] = polish, secondary pages, nice-to-haves.
+- The ESSENTIAL total must fit in ~${planBudget} tokens. Order OPTIONAL files last in the build order.
+- If the requested app does not fit the budget, cut OPTIONAL scope in your plan and say so explicitly - do not squeeze essential files.
+- The builder follows your budget: it writes essential files fully and treats optional files as best-effort.`;
+}
 
 /**
  * Calls the planner model (default kimi-k3) non-streaming and returns the
@@ -83,7 +110,7 @@ export async function getArchitectPlan(messages: SimpleMessage[], env: Env): Pro
         // `reasoning_effort` is a kimi-k3-only field; k2.x planners reject it.
         ...(plannerModel.startsWith('kimi-k3') ? { reasoning_effort: budget.effort } : {}),
         messages: [
-          { role: 'system', content: ARCHITECT_PROMPT },
+          { role: 'system', content: buildArchitectPrompt() },
           ...messages.map((m) => ({ role: m.role, content: m.content })),
         ],
       }),
