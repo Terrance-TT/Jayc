@@ -14,6 +14,7 @@ import { workbenchStore, type WorkbenchViewType } from '~/lib/stores/workbench';
 import { classNames } from '~/utils/classNames';
 import { cubicEasingFn } from '~/utils/easings';
 import { renderLogger } from '~/utils/logger';
+import { looksLikeSecret } from '~/utils/secretPatterns';
 import { EditorPanel } from './EditorPanel';
 import { FileGraph } from './FileGraph';
 import { GitHubPanel } from './GitHubPanel.client';
@@ -25,6 +26,19 @@ interface WorkspaceProps {
 }
 
 const viewTransition = { ease: cubicEasingFn };
+
+/**
+ * Security dedupe: warn at most once per file per session, no matter how often
+ * the user saves while the secret-looking string is still in it.
+ */
+const secretWarningShownFor = new Set<string>();
+
+function isEnvFilePath(filePath: string): boolean {
+  const fileName = filePath.split('/').pop() ?? filePath;
+
+  // .env files are the correct place for secrets — never warn on them
+  return fileName.startsWith('.env');
+}
 
 const viewOrder: WorkbenchViewType[] = ['code', 'graph', 'preview'];
 
@@ -98,9 +112,30 @@ export const Workbench = memo(({ chatStarted, isStreaming }: WorkspaceProps) => 
   }, []);
 
   const onFileSave = useCallback(() => {
+    const document = workbenchStore.currentDocument.get();
+
     workbenchStore.saveCurrentDocument().catch(() => {
       toast.error('Failed to update file content');
     });
+
+    /**
+     * Security: code files are shared with the AI (inside file-modification diffs).
+     * Warn — never block — when a manually saved file looks like it contains a secret.
+     */
+    if (
+      document &&
+      !isEnvFilePath(document.filePath) &&
+      !secretWarningShownFor.has(document.filePath) &&
+      looksLikeSecret(document.value)
+    ) {
+      secretWarningShownFor.add(document.filePath);
+
+      const fileName = document.filePath.split('/').pop() ?? document.filePath;
+
+      toast.warn(
+        `That looks like a secret in ${fileName}. Move it to your .env or Connectors panel — code files are shared with the AI.`,
+      );
+    }
   }, []);
 
   const onFileReset = useCallback(() => {

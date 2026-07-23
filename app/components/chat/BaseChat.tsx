@@ -1,10 +1,12 @@
 import type { Message } from 'ai';
 import React, { type RefCallback } from 'react';
 import { ClientOnly } from 'remix-utils/client-only';
+import { toast } from 'react-toastify';
 import { Menu } from '~/components/sidebar/Menu.client';
 import { IconButton } from '~/components/ui/IconButton';
 import { Workbench } from '~/components/workbench/Workbench.client';
 import { classNames } from '~/utils/classNames';
+import { looksLikeSecret } from '~/utils/secretPatterns';
 import { Messages } from './Messages.client';
 import { SendButton } from './SendButton.client';
 
@@ -128,6 +130,20 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                     value={input}
                     onChange={(event) => {
                       handleInputChange?.(event);
+                    }}
+                    onPaste={(event) => {
+                      /**
+                       * Security: anything typed or pasted into chat is sent to the AI and
+                       * stored in chat history. Warn (never block) when a paste looks like
+                       * a secret so the user can move it to .env / the Connectors panel.
+                       */
+                      const pastedText = event.clipboardData?.getData('text') ?? '';
+
+                      if (looksLikeSecret(pastedText)) {
+                        toast.warn(
+                          'That looks like a secret key. Keep it in your .env or the Connectors panel instead — anything in chat is sent to the AI.',
+                        );
+                      }
                     }}
                     style={{
                       minHeight: TEXTAREA_MIN_HEIGHT,

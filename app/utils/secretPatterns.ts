@@ -13,13 +13,20 @@ const SECRET_PATTERNS: RegExp[] = [
   /sk-[A-Za-z0-9_-]{16,}/, // OpenAI-style secret keys
   /sk_live_/, // Stripe live secret key
   /sk_test_/, // Stripe test secret key
+  /pk_live_/, // stripe live publishable key
   /service_role/, // Supabase service_role (full-access) key
   /whsec_/, // Stripe webhook signing secret
-  /-----BEGIN/, // PEM private key / certificate
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/, // PEM private key
   /AIza[0-9A-Za-z_-]{30,}/, // Google API key
   /ghp_[A-Za-z0-9]{30,}/, // GitHub personal access token
+  /gho_[A-Za-z0-9]{30,}/, // github OAuth token
+  /github_pat_[A-Za-z0-9_]{20,}/, // github fine-grained personal access token
+  /AKIA[0-9A-Z]{16}/, // AWS access key ID
   /xox[baprs]-[A-Za-z0-9-]{10,}/, // Slack token
   /eyJ[A-Za-z0-9_-]{20,}\.eyJ/, // JWT (header.payload)
+
+  // database connection strings that embed credentials (user:password@host)
+  /(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?):\/\/[^:\s/@]+:[^@\s/]+@/,
 ];
 
 /**
