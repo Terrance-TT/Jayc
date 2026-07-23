@@ -293,6 +293,21 @@ function resolveSpecifier(
   return { kind: 'unresolved', specifier, attempted: candidates[0] };
 }
 
+/**
+ * TypeScript files are allowed to import their siblings using the *compiled*
+ * extension — `import './store.js'` inside `main.ts` resolves to `store.ts`
+ * under node16/nodenext/bundler module resolution (and in Vite/esbuild).
+ * These mappings mirror that behavior so such imports are not falsely
+ * reported as missing. Imports that are genuinely broken still fail to
+ * resolve and show up as unresolved.
+ */
+const COMPILED_EXTENSION_EQUIVALENTS: Record<string, string[]> = {
+  '.js': ['.ts', '.tsx', '.d.ts'],
+  '.jsx': ['.tsx'],
+  '.mjs': ['.mts'],
+  '.cjs': ['.cts'],
+};
+
 function resolveAsFile(base: string, fileSet: Set<string>): string | undefined {
   if (fileSet.has(base)) {
     return base;
@@ -307,6 +322,20 @@ function resolveAsFile(base: string, fileSet: Set<string>): string | undefined {
   for (const ext of RESOLVE_EXTENSIONS) {
     if (fileSet.has(`${base}/index${ext}`)) {
       return `${base}/index${ext}`;
+    }
+  }
+
+  for (const [compiledExt, sourceExts] of Object.entries(COMPILED_EXTENSION_EQUIVALENTS)) {
+    if (!base.endsWith(compiledExt)) {
+      continue;
+    }
+
+    const stem = base.slice(0, -compiledExt.length);
+
+    for (const sourceExt of sourceExts) {
+      if (fileSet.has(stem + sourceExt)) {
+        return stem + sourceExt;
+      }
     }
   }
 
