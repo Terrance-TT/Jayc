@@ -21,7 +21,7 @@ export type ArtifactUpdateState = Pick<ArtifactState, 'title' | 'closed'>;
 
 type Artifacts = MapStore<Record<string, ArtifactState>>;
 
-export type WorkbenchViewType = 'code' | 'preview';
+export type WorkbenchViewType = 'code' | 'graph' | 'preview';
 
 export class WorkbenchStore {
   #previewsStore = new PreviewsStore(webcontainer);
@@ -172,7 +172,7 @@ export class WorkbenchStore {
   async saveCurrentDocument() {
     const currentDocument = this.currentDocument.get();
 
-    if (currentDocument === undefined) {
+    if (!currentDocument) {
       return;
     }
 
@@ -182,7 +182,7 @@ export class WorkbenchStore {
   resetCurrentDocument() {
     const currentDocument = this.currentDocument.get();
 
-    if (currentDocument === undefined) {
+    if (!currentDocument) {
       return;
     }
 
