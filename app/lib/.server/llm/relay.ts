@@ -1,5 +1,6 @@
 import { env as processEnv } from 'node:process';
 import { getAPIKey } from './api-key';
+import { estimateComplexity, plannerBudgetFor } from './effort';
 
 interface SimpleMessage {
   role: string;
@@ -50,6 +51,11 @@ const ARCHITECT_PROMPT = [
  * reasoning if the budget ran out mid-reasoning). Returns null on any
  * failure so the caller can fall back to a direct build.
  * Cloudflare env takes precedence over process env (which is empty on Pages).
+ *
+ * Thinking budget is adaptive (see ./effort): simple requests plan at low
+ * effort with a tight token/time budget, complex ones get full "max"
+ * reasoning. The timeout is a HARD limit — when it expires the call aborts
+ * and we fall back to a direct build.
  */
 export async function getArchitectPlan(messages: SimpleMessage[], env: Env): Promise<string | null> {
   const apiKey = getAPIKey(env);
@@ -61,6 +67,10 @@ export async function getArchitectPlan(messages: SimpleMessage[], env: Env): Pro
   const baseURL = env.MOONSHOT_BASE_URL || processEnv.MOONSHOT_BASE_URL || 'https://api.moonshot.ai/v1';
   const plannerModel = env.MOONSHOT_PLANNER_MODEL || processEnv.MOONSHOT_PLANNER_MODEL || 'kimi-k3';
 
+  const budget = plannerBudgetFor(estimateComplexity(messages), env);
+
+  console.log('[relay] planner budget:', JSON.stringify(budget));
+
   try {
     const res = await fetch(`${baseURL}/chat/completions`, {
       method: 'POST',
@@ -68,14 +78,16 @@ export async function getArchitectPlan(messages: SimpleMessage[], env: Env): Pro
       body: JSON.stringify({
         model: plannerModel,
         temperature: 1,
-        max_tokens: 24576,
+        max_tokens: budget.maxTokens,
         stream: false,
+        // `reasoning_effort` is a kimi-k3-only field; k2.x planners reject it.
+        ...(plannerModel.startsWith('kimi-k3') ? { reasoning_effort: budget.effort } : {}),
         messages: [
           { role: 'system', content: ARCHITECT_PROMPT },
           ...messages.map((m) => ({ role: m.role, content: m.content })),
         ],
       }),
-      signal: AbortSignal.timeout(300_000),
+      signal: AbortSignal.timeout(budget.timeoutMs),
     });
 
     if (!res.ok) {

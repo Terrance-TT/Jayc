@@ -5,6 +5,9 @@ interface Env {
   MOONSHOT_RELAY?: string;
   MOONSHOT_PLANNER_MODEL?: string;
   MAX_TOKENS?: string;
+  K3_PLANNER_EFFORT?: string;
+  K3_BUILDER_EFFORT?: string;
+  BUILDER_SEGMENT_TIMEOUT_MS?: string;
   CLERK_PUBLISHABLE_KEY?: string;
   CLERK_SECRET_KEY?: string;
   DB?: D1Database;
