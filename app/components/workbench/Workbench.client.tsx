@@ -1,23 +1,22 @@
 import { useStore } from '@nanostores/react';
 import { motion, type HTMLMotionProps, type Variants } from 'framer-motion';
 import { computed } from 'nanostores';
-import { memo, useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import {
   type OnChangeCallback as OnEditorChange,
   type OnScrollCallback as OnEditorScroll,
 } from '~/components/editor/codemirror/CodeMirrorEditor';
-import { Dialog, DialogDescription, DialogRoot, DialogTitle } from '~/components/ui/Dialog';
 import { IconButton } from '~/components/ui/IconButton';
 import { PanelHeaderButton } from '~/components/ui/PanelHeaderButton';
 import { Slider, type SliderOptions } from '~/components/ui/Slider';
-import { envVarsStore, initEnvVars } from '~/lib/stores/envVars';
 import { workbenchStore, type WorkbenchViewType } from '~/lib/stores/workbench';
 import { classNames } from '~/utils/classNames';
 import { cubicEasingFn } from '~/utils/easings';
 import { renderLogger } from '~/utils/logger';
 import { EditorPanel } from './EditorPanel';
 import { FileGraph } from './FileGraph';
+import { GitHubPanel } from './GitHubPanel.client';
 import { Preview } from './Preview';
 
 interface WorkspaceProps {
@@ -71,15 +70,6 @@ export const Workbench = memo(({ chatStarted, isStreaming }: WorkspaceProps) => 
   const unsavedFiles = useStore(workbenchStore.unsavedFiles);
   const files = useStore(workbenchStore.files);
   const selectedView = useStore(workbenchStore.currentView);
-  const envVars = useStore(envVarsStore);
-  const [isDeployChecklistOpen, setIsDeployChecklistOpen] = useState(false);
-
-  useEffect(() => {
-    initEnvVars();
-  }, []);
-
-  // names only — values must never be rendered outside the Connectors panel
-  const envVarNames = Object.keys(envVars).sort();
 
   const setSelectedView = (view: WorkbenchViewType) => {
     workbenchStore.currentView.set(view);
@@ -152,6 +142,7 @@ export const Workbench = memo(({ chatStarted, isStreaming }: WorkspaceProps) => 
               <div className="flex items-center px-3 py-2 border-b border-bolt-elements-borderColor">
                 <Slider selected={selectedView} options={sliderOptions} setSelected={setSelectedView} />
                 <div className="ml-auto" />
+                <GitHubPanel />
                 {selectedView === 'code' && (
                   <PanelHeaderButton
                     className="mr-1 text-sm"
@@ -163,10 +154,6 @@ export const Workbench = memo(({ chatStarted, isStreaming }: WorkspaceProps) => 
                     Toggle Terminal
                   </PanelHeaderButton>
                 )}
-                <PanelHeaderButton className="mr-1 text-sm" onClick={() => setIsDeployChecklistOpen(true)}>
-                  <div className="i-ph:rocket-launch" />
-                  Deploy checklist
-                </PanelHeaderButton>
                 <IconButton
                   icon="i-ph:x-circle"
                   className="-mr-1"
@@ -201,30 +188,6 @@ export const Workbench = memo(({ chatStarted, isStreaming }: WorkspaceProps) => 
             </div>
           </div>
         </div>
-        <DialogRoot open={isDeployChecklistOpen} onOpenChange={setIsDeployChecklistOpen}>
-          <Dialog onBackdrop={() => setIsDeployChecklistOpen(false)} onClose={() => setIsDeployChecklistOpen(false)}>
-            <DialogTitle>Deploy checklist</DialogTitle>
-            <DialogDescription asChild>
-              <div className="space-y-3">
-                {envVarNames.length > 0 ? (
-                  <>
-                    <p>Deploying to Railway/Vercel? Add these environment variables in your host's dashboard:</p>
-                    <ul className="list-disc pl-5 space-y-1">
-                      {envVarNames.map((name) => (
-                        <li key={name}>
-                          <code>{name}</code>
-                        </li>
-                      ))}
-                    </ul>
-                    <p>Get the values from the Connectors panel. Never upload your .env file.</p>
-                  </>
-                ) : (
-                  <p>No environment variables configured for this project.</p>
-                )}
-              </div>
-            </DialogDescription>
-          </Dialog>
-        </DialogRoot>
       </motion.div>
     )
   );
