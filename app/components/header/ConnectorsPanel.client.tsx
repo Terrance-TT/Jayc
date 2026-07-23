@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '@nanostores/react';
 import { IconButton } from '~/components/ui/IconButton';
-import { CONNECTORS, isConnectorConnected, type Connector } from '~/lib/connectors/catalog';
+import { CONNECTORS, isConnectorConnected, isPublishableEnvKey, type Connector } from '~/lib/connectors/catalog';
 import { envVarsStore, initEnvVars, isValidEnvVarName, removeEnvVar, setEnvVar } from '~/lib/stores/envVars';
 
 export function ConnectorsPanel() {
@@ -37,6 +37,13 @@ export function ConnectorsPanel() {
   }, [open]);
 
   const varCount = Object.keys(envVars).length;
+
+  /**
+   * Server-only (non-publishable) variables that currently have a value. These are
+   * real secrets: they are written into the generated app's .env, so the code the
+   * AI writes — and anyone running the preview — can read them.
+   */
+  const serverOnlyKeys = Object.keys(envVars).filter((key) => !isPublishableEnvKey(key));
 
   const saveConnector = (connector: Connector) => {
     let saved = false;
@@ -114,6 +121,12 @@ export function ConnectorsPanel() {
                 {Object.keys(envVars).map((key) => (
                   <div key={key} className="flex items-center gap-2 px-3 py-2 bg-bolt-elements-background-depth-1">
                     <span className="font-mono text-xs text-bolt-elements-textPrimary flex-1 truncate">{key}</span>
+                    {!isPublishableEnvKey(key) && (
+                      <div
+                        className="i-ph:warning-bold text-amber-500 text-sm shrink-0"
+                        title="Server-only key — see warning below"
+                      />
+                    )}
                     <span className="text-bolt-elements-textTertiary text-xs tracking-widest">••••••••</span>
                     <button
                       className="text-bolt-elements-textTertiary hover:text-red-500 transition-colors"
@@ -126,6 +139,20 @@ export function ConnectorsPanel() {
                 ))}
               </div>
             </>
+          )}
+
+          {serverOnlyKeys.length > 0 && (
+            <div className="flex gap-2 mb-3 px-3 py-2 rounded-lg border border-amber-500/40 bg-amber-500/10">
+              <div className="i-ph:warning-bold text-amber-500 text-base shrink-0 mt-0.5" />
+              <div className="text-xs text-bolt-elements-textSecondary leading-relaxed">
+                <span className="font-medium text-amber-500">
+                  Server-only {serverOnlyKeys.length === 1 ? 'key' : 'keys'}: {serverOnlyKeys.join(', ')}
+                </span>{' '}
+                — {serverOnlyKeys.length === 1 ? 'this value is' : 'these values are'} injected into your generated
+                app's .env and visible to the code the AI writes and anyone who runs your preview. Use a
+                limited-permission/test key when possible.
+              </div>
+            </div>
           )}
 
           <div className="text-xs font-medium text-bolt-elements-textSecondary mb-1.5">Connect a service</div>
@@ -181,6 +208,15 @@ export function ConnectorsPanel() {
                             <div className="flex items-center gap-1.5 mb-0.5">
                               <span className="font-mono text-xs text-bolt-elements-textPrimary">{envKey.name}</span>
                               {alreadySet && <div className="i-ph:check-circle-fill text-green-500 text-xs" />}
+                              {!envKey.publishable && (
+                                <span
+                                  className="flex items-center gap-0.5 text-[10px] text-amber-500"
+                                  title="Server-only key — the value lands in the generated app's .env and is visible to AI-written code and anyone who runs your preview. Use a limited-permission/test key when possible."
+                                >
+                                  <div className="i-ph:warning-bold text-xs" />
+                                  server-only
+                                </span>
+                              )}
                             </div>
                             <p className="text-[11px] text-bolt-elements-textTertiary mb-1">
                               {envKey.description}
