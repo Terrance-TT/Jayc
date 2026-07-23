@@ -29,11 +29,11 @@ interface BaseChatProps {
 }
 
 const EXAMPLE_PROMPTS = [
-  { text: 'I need a todo app with team collaboration' },
-  { text: 'My users cant log in securely — help me fix auth' },
-  { text: 'I need to accept payments but the checkout keeps breaking' },
-  { text: 'My app is slow because everything is in one file' },
-  { text: 'I need a dashboard to show real-time data to my team' },
+  { text: 'Google Maps for buses is always wrong — build me a live bus tracker with real arrival times' },
+  { text: 'I need a stock dashboard that uses AI to compile news and price data so I can trade smarter' },
+  { text: 'My restaurant has a 40-minute wait and no way to text people when their table is ready' },
+  { text: 'I run a tutoring business and scheduling over text is a complete mess — I double-book constantly' },
+  { text: 'My gym clients forget their sessions and I lose money on no-shows — I need a booking system' },
 ];
 
 const TEXTAREA_MIN_HEIGHT = 76;
@@ -76,10 +76,10 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
             {!chatStarted && (
               <div id="intro" className="mt-[26vh] max-w-chat mx-auto">
                 <h1 className="text-5xl text-center font-bold text-bolt-elements-textPrimary mb-2">
-                  What's the problem?
+                  Bring ideas to life
                 </h1>
                 <p className="mb-4 text-center text-bolt-elements-textSecondary">
-                  Describe what you're building — we'll architect it properly.
+                  Describe your problem — we'll build the solution.
                 </p>
               </div>
             )}
