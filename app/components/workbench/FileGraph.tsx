@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { buildDependencyGraph, type DependencyGraph, type DependencyNode } from '~/lib/graph/dependency-graph';
+import { buildDependencyGraph, type DependencyEdge, type DependencyGraph, type DependencyNode } from '~/lib/graph/dependency-graph';
 import type { FileMap } from '~/lib/stores/files';
 import { WORK_DIR } from '~/utils/constants';
 
@@ -11,7 +11,6 @@ interface FileGraphProps {
 const CANVAS_WIDTH = 1200;
 const CANVAS_HEIGHT = 800;
 const PADDING = 70;
-const HOVER_CARD_WIDTH = 300;
 
 const CATEGORY_COLORS: Record<string, string> = {
   TypeScript: '#7e93c4',
@@ -53,8 +52,47 @@ export const FileGraph = memo(({ files, onOpenFile }: FileGraphProps) => {
   }, [layoutPositions]);
 
   const [selectedPath, setSelectedPath] = useState<string | undefined>(undefined);
-  const [hovered, setHovered] = useState<{ path: string; x: number; y: number } | null>(null);
+  const [hoveredPath, setHoveredPath] = useState<string | null>(null);
+  const [simpleMode, setSimpleMode] = useState(true);
   const [view, setView] = useState({ k: 1, x: 0, y: 0 });
+
+  /**
+   * Simple mode shows only the most important wire for each file: the single
+   * connection it takes the most from, and the single connection another
+   * file takes the most from it. "Most" is measured by how many distinct
+   * named things actually flow across the wire — not hidden or averaged.
+   */
+  const visibleEdges = useMemo(() => {
+    if (!simpleMode) {
+      return graph.edges;
+    }
+
+    const kept = new Map<string, DependencyEdge>();
+
+    const strongest = (candidates: DependencyEdge[], otherEnd: 'source' | 'target') =>
+      [...candidates].sort(
+        (a, b) => b.weight - a.weight || (otherEnd === 'target' ? a.target.localeCompare(b.target) : a.source.localeCompare(b.source)),
+      )[0];
+
+    for (const node of graph.nodes) {
+      const topOutgoing = strongest(
+        graph.edges.filter((edge) => edge.source === node.path),
+        'target',
+      );
+      const topIncoming = strongest(
+        graph.edges.filter((edge) => edge.target === node.path),
+        'source',
+      );
+
+      for (const edge of [topOutgoing, topIncoming]) {
+        if (edge) {
+          kept.set(`${edge.source} → ${edge.target}`, edge);
+        }
+      }
+    }
+
+    return [...kept.values()];
+  }, [graph, simpleMode]);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const backgroundRef = useRef<SVGRectElement>(null);
@@ -101,7 +139,7 @@ export const FileGraph = memo(({ files, onOpenFile }: FileGraphProps) => {
   }, []);
 
   const selectedNode = selectedPath ? nodeByPath.get(selectedPath) : undefined;
-  const hoveredNode = hovered ? nodeByPath.get(hovered.path) : undefined;
+  const hoveredNode = hoveredPath ? nodeByPath.get(hoveredPath) : undefined;
 
   const neighborhood = useMemo(() => {
     if (!selectedNode) {
@@ -198,7 +236,7 @@ export const FileGraph = memo(({ files, onOpenFile }: FileGraphProps) => {
         </defs>
         <rect ref={backgroundRef} x={0} y={0} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} fill="transparent" />
         <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
-          {graph.edges.map((edge) => {
+          {visibleEdges.map((edge) => {
             const source = positions.get(edge.source);
             const target = positions.get(edge.target);
 
@@ -248,7 +286,7 @@ export const FileGraph = memo(({ files, onOpenFile }: FileGraphProps) => {
                 className="cursor-grab active:cursor-grabbing"
                 onPointerDown={(event) => {
                   event.stopPropagation();
-                  setHovered(null);
+                  setHoveredPath(null);
 
                   dragState.current = {
                     pointerId: event.pointerId,
@@ -310,14 +348,11 @@ export const FileGraph = memo(({ files, onOpenFile }: FileGraphProps) => {
 
                   setSelectedPath(isSelected ? undefined : node.path);
                 }}
-                onMouseEnter={(event) => {
-                  setHovered({ path: node.path, x: event.clientX, y: event.clientY });
-                }}
-                onMouseMove={(event) => {
-                  setHovered({ path: node.path, x: event.clientX, y: event.clientY });
+                onMouseEnter={() => {
+                  setHoveredPath(node.path);
                 }}
                 onMouseLeave={() => {
-                  setHovered((current) => (current?.path === node.path ? null : current));
+                  setHoveredPath((current) => (current === node.path ? null : current));
                 }}
               >
                 {isSelected && (
@@ -349,16 +384,40 @@ export const FileGraph = memo(({ files, onOpenFile }: FileGraphProps) => {
         </g>
       </svg>
 
-      <div className="absolute left-3 top-3 rounded-md border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 px-3 py-1.5 text-xs text-bolt-elements-textSecondary">
+      <div className="absolute left-1/2 top-3 -translate-x-1/2 rounded-md border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 px-3 py-1.5 text-xs text-bolt-elements-textSecondary">
         <span className="font-medium text-bolt-elements-textPrimary">{fileCount}</span> files ·{' '}
-        <span className="font-medium text-bolt-elements-textPrimary">{graph.edges.length}</span> connections ·{' '}
-        <span className="font-medium text-bolt-elements-textPrimary">{graph.externalPackages.length}</span> packages
+        <span className="font-medium text-bolt-elements-textPrimary">{visibleEdges.length}</span>{' '}
+        {simpleMode ? 'key connections' : 'connections'} ·{' '}
+        <span className="font-medium text-bolt-elements-textPrimary">{graph.externalPackages.length}</span> tools
         {graph.unresolvedCount > 0 && (
           <>
             {' '}
-            · <span className="font-medium text-bolt-elements-icon-error">{graph.unresolvedCount}</span> unresolved
+            · <span className="font-medium text-bolt-elements-icon-error">{graph.unresolvedCount}</span> broken references
           </>
         )}
+      </div>
+
+      <div className="absolute right-3 top-3 flex items-center gap-1 rounded-full border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 p-1 text-xs">
+        <button
+          onClick={() => setSimpleMode(true)}
+          className={
+            simpleMode
+              ? 'rounded-full bg-bolt-elements-item-backgroundAccent px-2.5 py-0.5 text-bolt-elements-item-contentAccent'
+              : 'px-2.5 py-0.5 text-bolt-elements-item-contentDefault hover:text-bolt-elements-item-contentActive'
+          }
+        >
+          Simple
+        </button>
+        <button
+          onClick={() => setSimpleMode(false)}
+          className={
+            !simpleMode
+              ? 'rounded-full bg-bolt-elements-item-backgroundAccent px-2.5 py-0.5 text-bolt-elements-item-contentAccent'
+              : 'px-2.5 py-0.5 text-bolt-elements-item-contentDefault hover:text-bolt-elements-item-contentActive'
+          }
+        >
+          Full
+        </button>
       </div>
 
       <div className="absolute bottom-3 left-3 flex max-w-[60%] flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 px-3 py-1.5 text-xs text-bolt-elements-textSecondary">
@@ -379,7 +438,7 @@ export const FileGraph = memo(({ files, onOpenFile }: FileGraphProps) => {
             <line x1="0" y1="3" x2="14" y2="3" stroke={EDGE_COLOR} strokeWidth="1.2" />
             <path d="M 14 0 L 18 3 L 14 6 z" fill={EDGE_COLOR} />
           </svg>
-          imports
+          uses
         </span>
       </div>
 
@@ -415,31 +474,41 @@ export const FileGraph = memo(({ files, onOpenFile }: FileGraphProps) => {
         </button>
       </div>
 
-      {hoveredNode && hovered && (
-        <div
-          className="pointer-events-none fixed z-50 max-h-80 overflow-y-auto rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 p-3 text-xs shadow-xl"
-          style={{
-            left: Math.min(hovered.x + 16, (typeof window === 'undefined' ? 1200 : window.innerWidth) - HOVER_CARD_WIDTH - 12),
-            top: Math.min(hovered.y + 16, (typeof window === 'undefined' ? 800 : window.innerHeight) - 220),
-            width: HOVER_CARD_WIDTH,
-          }}
-        >
-          <div className="truncate font-medium text-bolt-elements-textPrimary">{hoveredNode.name}</div>
-          <div className="truncate text-bolt-elements-textTertiary">{relativeToWorkDir(hoveredNode.path)}</div>
-          {hoveredNode.summary && <div className="mt-1.5 text-bolt-elements-textSecondary">{hoveredNode.summary}</div>}
+      <div className="pointer-events-none absolute left-3 top-3 w-80 max-w-[45%] rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 p-3 text-xs shadow-lg">
+        {hoveredNode ? (
+          <>
+            <div className="truncate font-medium text-bolt-elements-textPrimary">{hoveredNode.name}</div>
+            <div className="truncate text-bolt-elements-textTertiary">{relativeToWorkDir(hoveredNode.path)}</div>
+            {hoveredNode.summary && <div className="mt-1.5 text-bolt-elements-textSecondary">{hoveredNode.summary}</div>}
 
-          {hoveredNode.provides.length > 0 && (
-            <div className="mt-1.5 text-bolt-elements-textSecondary">
-              <span className="text-bolt-elements-textTertiary">Exports:</span> {formatNameList(hoveredNode.provides)}
+            {hoveredNode.provides.length > 0 && (
+              <div className="mt-1.5 text-bolt-elements-textSecondary">
+                <span className="text-bolt-elements-textTertiary">What it gives others:</span>{' '}
+                {formatNameList(hoveredNode.provides)}
+              </div>
+            )}
+
+            <HoverConnections node={hoveredNode} graph={graph} nodeByPath={nodeByPath} />
+
+            <div className="mt-2 text-bolt-elements-textTertiary">Click for full details · drag to move it</div>
+          </>
+        ) : (
+          <>
+            <div className="font-medium text-bolt-elements-textPrimary">How to read this map</div>
+            <div className="mt-1 text-bolt-elements-textSecondary">
+              Every dot is a file. Lines show which files share things with each other. Hover a dot to see what that
+              file does, in plain words.
             </div>
-          )}
-
-          <HoverConnections node={hoveredNode} graph={graph} nodeByPath={nodeByPath} />
-        </div>
-      )}
+            <div className="mt-1 text-bolt-elements-textTertiary">
+              Bigger dot = more files rely on it. Dashed red = a file that's referenced but missing. Drag dots to
+              organize, scroll to zoom.
+            </div>
+          </>
+        )}
+      </div>
 
       {selectedNode && (
-        <div className="absolute right-3 top-3 max-h-[calc(100%-5rem)] w-72 max-w-[80%] overflow-y-auto rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 p-3 text-sm shadow-lg">
+        <div className="absolute right-3 top-14 max-h-[calc(100%-7rem)] w-72 max-w-[80%] overflow-y-auto rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 p-3 text-sm shadow-lg">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <div className="truncate font-medium text-bolt-elements-textPrimary">{selectedNode.name}</div>
@@ -458,13 +527,13 @@ export const FileGraph = memo(({ files, onOpenFile }: FileGraphProps) => {
 
           {selectedNode.missing && (
             <p className="mt-2 text-xs" style={{ color: CATEGORY_COLORS.Missing }}>
-              This file is imported by other files but does not exist in the project.
+              Other files expect this file, but it doesn't exist in the project.
             </p>
           )}
 
-          <DetailSection title={`Imports (${selectedNode.imports.length})`} paths={selectedNode.imports} onSelect={setSelectedPath} />
+          <DetailSection title={`Uses (${selectedNode.imports.length})`} paths={selectedNode.imports} onSelect={setSelectedPath} />
           <DetailSection
-            title={`Imported by (${selectedNode.importedBy.length})`}
+            title={`Used by (${selectedNode.importedBy.length})`}
             paths={selectedNode.importedBy}
             onSelect={setSelectedPath}
           />
@@ -472,7 +541,7 @@ export const FileGraph = memo(({ files, onOpenFile }: FileGraphProps) => {
           {selectedNode.external.length > 0 && (
             <div className="mt-3">
               <div className="text-xs font-medium uppercase tracking-wide text-bolt-elements-textTertiary">
-                Packages ({selectedNode.external.length})
+                Tools it needs ({selectedNode.external.length})
               </div>
               <div className="mt-1 flex flex-col gap-0.5">
                 {selectedNode.external.map((pkg) => (
@@ -487,7 +556,7 @@ export const FileGraph = memo(({ files, onOpenFile }: FileGraphProps) => {
           {selectedNode.unresolved.length > 0 && (
             <div className="mt-3">
               <div className="text-xs font-medium uppercase tracking-wide" style={{ color: CATEGORY_COLORS.Missing }}>
-                Unresolved imports ({selectedNode.unresolved.length})
+                Broken references ({selectedNode.unresolved.length})
               </div>
               <div className="mt-1 flex flex-col gap-0.5">
                 {selectedNode.unresolved.map((specifier) => (
@@ -535,30 +604,40 @@ function HoverConnections({
 
     return (
       <div className="mt-1.5 text-bolt-elements-textTertiary">
-        No connections — it imports nothing and nothing imports it.
+        Stands alone — it doesn't use other files, and no other file uses it.
       </div>
     );
   }
 
   return (
     <div className="mt-2 flex flex-col gap-1.5 border-t border-bolt-elements-borderColor pt-1.5">
-      {outgoing.slice(0, MAX_HOVER_CONNECTIONS).map((edge) => (
-        <div key={`out-${edge.target}`} className="truncate text-bolt-elements-textSecondary">
-          <span className="text-bolt-elements-textTertiary">→</span> {nodeByPath.get(edge.target)?.name ?? edge.target}{' '}
-          <span className="text-bolt-elements-textTertiary">— {edge.labels.join(', ')}</span>
+      {outgoing.length > 0 && (
+        <div>
+          <div className="text-bolt-elements-textTertiary">Takes from:</div>
+          {outgoing.slice(0, MAX_HOVER_CONNECTIONS).map((edge) => (
+            <div key={`out-${edge.target}`} className="truncate text-bolt-elements-textSecondary">
+              • {nodeByPath.get(edge.target)?.name ?? edge.target}{' '}
+              <span className="text-bolt-elements-textTertiary">— {edge.labels.join(', ')}</span>
+            </div>
+          ))}
+          {outgoing.length > MAX_HOVER_CONNECTIONS && (
+            <div className="text-bolt-elements-textTertiary">+{outgoing.length - MAX_HOVER_CONNECTIONS} more</div>
+          )}
         </div>
-      ))}
-      {outgoing.length > MAX_HOVER_CONNECTIONS && (
-        <div className="text-bolt-elements-textTertiary">+{outgoing.length - MAX_HOVER_CONNECTIONS} more outgoing</div>
       )}
-      {incoming.slice(0, MAX_HOVER_CONNECTIONS).map((edge) => (
-        <div key={`in-${edge.source}`} className="truncate text-bolt-elements-textSecondary">
-          <span className="text-bolt-elements-textTertiary">←</span> {nodeByPath.get(edge.source)?.name ?? edge.source}{' '}
-          <span className="text-bolt-elements-textTertiary">— {edge.labels.join(', ')}</span>
+      {incoming.length > 0 && (
+        <div>
+          <div className="text-bolt-elements-textTertiary">Gives to:</div>
+          {incoming.slice(0, MAX_HOVER_CONNECTIONS).map((edge) => (
+            <div key={`in-${edge.source}`} className="truncate text-bolt-elements-textSecondary">
+              • {nodeByPath.get(edge.source)?.name ?? edge.source}{' '}
+              <span className="text-bolt-elements-textTertiary">— {edge.labels.join(', ')}</span>
+            </div>
+          ))}
+          {incoming.length > MAX_HOVER_CONNECTIONS && (
+            <div className="text-bolt-elements-textTertiary">+{incoming.length - MAX_HOVER_CONNECTIONS} more</div>
+          )}
         </div>
-      ))}
-      {incoming.length > MAX_HOVER_CONNECTIONS && (
-        <div className="text-bolt-elements-textTertiary">+{incoming.length - MAX_HOVER_CONNECTIONS} more incoming</div>
       )}
     </div>
   );
