@@ -88,23 +88,14 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // 4. upload every file as a blob, in small parallel batches
     const treeEntries: Array<{ path: string; mode: '100644'; type: 'blob'; sha: string }> = [];
-    const CHUNK_SIZE = 8;
+    const CHUNK_SIZE = 4;
 
     for (let i = 0; i < files.length; i += CHUNK_SIZE) {
       const batch = await Promise.all(
         files.slice(i, i + CHUNK_SIZE).map(async (file) => {
-          const blobRes = await gh(token, `/repos/${owner}/${repoName}/git/blobs`, {
-            method: 'POST',
-            body: JSON.stringify({ content: file.content, encoding: 'utf-8' }),
-          });
+          const sha = await uploadBlob(token, owner, repoName, file);
 
-          if (!blobRes.ok) {
-            throw new Error(`Failed to upload ${file.path}`);
-          }
-
-          const blob = (await blobRes.json()) as { sha: string };
-
-          return { path: file.path, mode: '100644' as const, type: 'blob' as const, sha: blob.sha };
+          return { path: file.path, mode: '100644' as const, type: 'blob' as const, sha };
         }),
       );
 
@@ -166,4 +157,69 @@ export async function action({ request }: ActionFunctionArgs) {
 
 function isValidFile(file: PushFile): boolean {
   return Boolean(file && typeof file.path === 'string' && file.path.length > 0 && typeof file.content === 'string');
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function toBase64(value: string): string {
+  return btoa(unescape(encodeURIComponent(value)));
+}
+
+/*
+ * Upload a single file as a git blob with retries. GitHub occasionally
+ * rate-limits or drops a request when a whole project is uploaded in rapid
+ * succession, so a transient failure shouldn't abort the entire push.
+ */
+async function uploadBlob(token: string, owner: string, repo: string, file: PushFile): Promise<string> {
+  let lastError = '';
+
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (attempt > 1) {
+      await sleep(500 * attempt);
+    }
+
+    const response = await gh(token, `/repos/${owner}/${repo}/git/blobs`, {
+      method: 'POST',
+      body: JSON.stringify({ content: file.content, encoding: 'utf-8' }),
+    });
+
+    if (response.ok) {
+      const blob = (await response.json()) as { sha: string };
+
+      return blob.sha;
+    }
+
+    lastError = await response.text();
+
+    // GitHub says how long to wait — listen to it
+    const retryAfter = Number(response.headers.get('retry-after'));
+
+    if (retryAfter > 0 && retryAfter <= 10) {
+      await sleep(retryAfter * 1000);
+    }
+
+    if (response.status === 422) {
+      /*
+       * the file isn't valid UTF-8 (rare, e.g. odd characters in generated
+       * code) — retrying as-is is pointless, send it base64-encoded instead
+       */
+      const fallback = await gh(token, `/repos/${owner}/${repo}/git/blobs`, {
+        method: 'POST',
+        body: JSON.stringify({ content: toBase64(file.content), encoding: 'base64' }),
+      });
+
+      if (fallback.ok) {
+        const blob = (await fallback.json()) as { sha: string };
+
+        return blob.sha;
+      }
+
+      lastError = await fallback.text();
+      break;
+    }
+  }
+
+  throw new Error(`Failed to upload ${file.path} — GitHub said: ${lastError.slice(0, 200)}`);
 }
