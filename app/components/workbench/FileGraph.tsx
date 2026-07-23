@@ -11,6 +11,7 @@ interface FileGraphProps {
 const CANVAS_WIDTH = 1200;
 const CANVAS_HEIGHT = 800;
 const PADDING = 70;
+const HOVER_CARD_WIDTH = 300;
 
 const CATEGORY_COLORS: Record<string, string> = {
   TypeScript: '#7e93c4',
@@ -28,10 +29,31 @@ const EDGE_ACTIVE_COLOR = '#e0a34e';
 
 export const FileGraph = memo(({ files, onOpenFile }: FileGraphProps) => {
   const graph = useMemo(() => buildDependencyGraph(files), [files]);
-  const positions = useMemo(() => computeLayout(graph), [graph]);
+  const layoutPositions = useMemo(() => computeLayout(graph), [graph]);
   const nodeByPath = useMemo(() => new Map(graph.nodes.map((node) => [node.path, node])), [graph]);
 
+  /**
+   * Live node positions. They start from the computed layout, but the user
+   * can drag nodes around freely — edges read from this same map, so lines
+   * stay attached while dragging. When the project changes, dragged spots
+   * are kept for files that still exist and only new files get laid out.
+   */
+  const [positions, setPositions] = useState(layoutPositions);
+
+  useEffect(() => {
+    setPositions((current) => {
+      const next = new Map<string, LayoutPoint>();
+
+      for (const [path, point] of layoutPositions) {
+        next.set(path, current.get(path) ?? point);
+      }
+
+      return next;
+    });
+  }, [layoutPositions]);
+
   const [selectedPath, setSelectedPath] = useState<string | undefined>(undefined);
+  const [hovered, setHovered] = useState<{ path: string; x: number; y: number } | null>(null);
   const [view, setView] = useState({ k: 1, x: 0, y: 0 });
 
   const svgRef = useRef<SVGSVGElement>(null);
@@ -39,6 +61,16 @@ export const FileGraph = memo(({ files, onOpenFile }: FileGraphProps) => {
   const panState = useRef<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(
     null,
   );
+  const dragState = useRef<{
+    pointerId: number;
+    path: string;
+    startClientX: number;
+    startClientY: number;
+    originX: number;
+    originY: number;
+    moved: boolean;
+  } | null>(null);
+  const didDragRef = useRef(false);
 
   // drop the selection if the selected file no longer exists
   useEffect(() => {
@@ -69,6 +101,7 @@ export const FileGraph = memo(({ files, onOpenFile }: FileGraphProps) => {
   }, []);
 
   const selectedNode = selectedPath ? nodeByPath.get(selectedPath) : undefined;
+  const hoveredNode = hovered ? nodeByPath.get(hovered.path) : undefined;
 
   const neighborhood = useMemo(() => {
     if (!selectedNode) {
@@ -212,11 +245,79 @@ export const FileGraph = memo(({ files, onOpenFile }: FileGraphProps) => {
                 key={node.path}
                 transform={`translate(${point.x} ${point.y})`}
                 opacity={isDimmed ? 0.3 : 1}
-                className="cursor-pointer"
-                onPointerDown={(event) => event.stopPropagation()}
+                className="cursor-grab active:cursor-grabbing"
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                  setHovered(null);
+
+                  dragState.current = {
+                    pointerId: event.pointerId,
+                    path: node.path,
+                    startClientX: event.clientX,
+                    startClientY: event.clientY,
+                    originX: point.x,
+                    originY: point.y,
+                    moved: false,
+                  };
+
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                }}
+                onPointerMove={(event) => {
+                  const drag = dragState.current;
+
+                  if (!drag || drag.pointerId !== event.pointerId || drag.path !== node.path) {
+                    return;
+                  }
+
+                  const clientDx = event.clientX - drag.startClientX;
+                  const clientDy = event.clientY - drag.startClientY;
+
+                  if (!drag.moved && Math.hypot(clientDx, clientDy) < 3) {
+                    return;
+                  }
+
+                  drag.moved = true;
+
+                  const rect = svgRef.current?.getBoundingClientRect();
+                  const meetScale = rect ? Math.min(rect.width / CANVAS_WIDTH, rect.height / CANVAS_HEIGHT) || 1 : 1;
+                  const scale = meetScale * view.k;
+
+                  setPositions((current) => {
+                    const next = new Map(current);
+                    next.set(drag.path, { x: drag.originX + clientDx / scale, y: drag.originY + clientDy / scale });
+
+                    return next;
+                  });
+                }}
+                onPointerUp={(event) => {
+                  const drag = dragState.current;
+
+                  if (drag && drag.pointerId === event.pointerId) {
+                    didDragRef.current = drag.moved;
+                    dragState.current = null;
+                  }
+                }}
+                onPointerCancel={() => {
+                  dragState.current = null;
+                }}
                 onClick={(event) => {
                   event.stopPropagation();
+
+                  if (didDragRef.current) {
+                    didDragRef.current = false;
+                    return;
+                  }
+
                   setSelectedPath(isSelected ? undefined : node.path);
+                }}
+                onMouseEnter={(event) => {
+                  setHovered({ path: node.path, x: event.clientX, y: event.clientY });
+                }}
+                onMouseMove={(event) => {
+                  setHovered({ path: node.path, x: event.clientX, y: event.clientY });
+                }}
+                onMouseLeave={() => {
+                  setHovered((current) => (current?.path === node.path ? null : current));
                 }}
               >
                 {isSelected && (
@@ -284,6 +385,14 @@ export const FileGraph = memo(({ files, onOpenFile }: FileGraphProps) => {
 
       <div className="absolute bottom-3 right-3 flex gap-1">
         <button
+          aria-label="Re-layout graph"
+          title="Re-layout graph"
+          className="rounded-md border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 p-1.5 text-bolt-elements-textSecondary hover:text-bolt-elements-textPrimary"
+          onClick={() => setPositions(computeLayout(graph))}
+        >
+          <div className="i-ph:arrows-clockwise" />
+        </button>
+        <button
           aria-label="Zoom in"
           className="rounded-md border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 p-1.5 text-bolt-elements-textSecondary hover:text-bolt-elements-textPrimary"
           onClick={() => setView((current) => ({ ...current, k: Math.min(4, current.k * 1.25) }))}
@@ -306,6 +415,29 @@ export const FileGraph = memo(({ files, onOpenFile }: FileGraphProps) => {
         </button>
       </div>
 
+      {hoveredNode && hovered && (
+        <div
+          className="pointer-events-none fixed z-50 max-h-80 overflow-y-auto rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 p-3 text-xs shadow-xl"
+          style={{
+            left: Math.min(hovered.x + 16, (typeof window === 'undefined' ? 1200 : window.innerWidth) - HOVER_CARD_WIDTH - 12),
+            top: Math.min(hovered.y + 16, (typeof window === 'undefined' ? 800 : window.innerHeight) - 220),
+            width: HOVER_CARD_WIDTH,
+          }}
+        >
+          <div className="truncate font-medium text-bolt-elements-textPrimary">{hoveredNode.name}</div>
+          <div className="truncate text-bolt-elements-textTertiary">{relativeToWorkDir(hoveredNode.path)}</div>
+          {hoveredNode.summary && <div className="mt-1.5 text-bolt-elements-textSecondary">{hoveredNode.summary}</div>}
+
+          {hoveredNode.provides.length > 0 && (
+            <div className="mt-1.5 text-bolt-elements-textSecondary">
+              <span className="text-bolt-elements-textTertiary">Exports:</span> {formatNameList(hoveredNode.provides)}
+            </div>
+          )}
+
+          <HoverConnections node={hoveredNode} graph={graph} nodeByPath={nodeByPath} />
+        </div>
+      )}
+
       {selectedNode && (
         <div className="absolute right-3 top-3 max-h-[calc(100%-5rem)] w-72 max-w-[80%] overflow-y-auto rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-background-depth-2 p-3 text-sm shadow-lg">
           <div className="flex items-start justify-between gap-2">
@@ -321,6 +453,8 @@ export const FileGraph = memo(({ files, onOpenFile }: FileGraphProps) => {
               <div className="i-ph:x text-lg" />
             </button>
           </div>
+
+          {selectedNode.summary && <p className="mt-2 text-xs text-bolt-elements-textSecondary">{selectedNode.summary}</p>}
 
           {selectedNode.missing && (
             <p className="mt-2 text-xs" style={{ color: CATEGORY_COLORS.Missing }}>
@@ -379,6 +513,62 @@ export const FileGraph = memo(({ files, onOpenFile }: FileGraphProps) => {
     </div>
   );
 });
+
+const MAX_HOVER_CONNECTIONS = 5;
+
+function HoverConnections({
+  node,
+  graph,
+  nodeByPath,
+}: {
+  node: DependencyNode;
+  graph: DependencyGraph;
+  nodeByPath: Map<string, DependencyNode>;
+}) {
+  const outgoing = graph.edges.filter((edge) => edge.source === node.path);
+  const incoming = graph.edges.filter((edge) => edge.target === node.path);
+
+  if (outgoing.length === 0 && incoming.length === 0) {
+    if (node.missing) {
+      return null;
+    }
+
+    return (
+      <div className="mt-1.5 text-bolt-elements-textTertiary">
+        No connections — it imports nothing and nothing imports it.
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 flex flex-col gap-1.5 border-t border-bolt-elements-borderColor pt-1.5">
+      {outgoing.slice(0, MAX_HOVER_CONNECTIONS).map((edge) => (
+        <div key={`out-${edge.target}`} className="truncate text-bolt-elements-textSecondary">
+          <span className="text-bolt-elements-textTertiary">→</span> {nodeByPath.get(edge.target)?.name ?? edge.target}{' '}
+          <span className="text-bolt-elements-textTertiary">— {edge.labels.join(', ')}</span>
+        </div>
+      ))}
+      {outgoing.length > MAX_HOVER_CONNECTIONS && (
+        <div className="text-bolt-elements-textTertiary">+{outgoing.length - MAX_HOVER_CONNECTIONS} more outgoing</div>
+      )}
+      {incoming.slice(0, MAX_HOVER_CONNECTIONS).map((edge) => (
+        <div key={`in-${edge.source}`} className="truncate text-bolt-elements-textSecondary">
+          <span className="text-bolt-elements-textTertiary">←</span> {nodeByPath.get(edge.source)?.name ?? edge.source}{' '}
+          <span className="text-bolt-elements-textTertiary">— {edge.labels.join(', ')}</span>
+        </div>
+      ))}
+      {incoming.length > MAX_HOVER_CONNECTIONS && (
+        <div className="text-bolt-elements-textTertiary">+{incoming.length - MAX_HOVER_CONNECTIONS} more incoming</div>
+      )}
+    </div>
+  );
+}
+
+function formatNameList(names: string[]): string {
+  const shown = names.slice(0, 8).join(', ');
+
+  return names.length > 8 ? `${shown}, +${names.length - 8} more` : shown;
+}
 
 function DetailSection({
   title,
