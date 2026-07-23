@@ -36,15 +36,29 @@ const PLANNER_BUDGETS: Record<TaskComplexity, PlannerBudget> = {
 };
 
 /**
- * Builder effort by complexity. Complex builds keep full "max" reasoning —
- * that is what K3 is for — while simpler work is capped so it doesn't
- * over-think. The builder's hard limits stay the token caps (MAX_TOKENS per
- * segment x MAX_RESPONSE_SEGMENTS) plus the wall-clock backstop below.
+ * Builder effort by complexity. The builder EXECUTES a plan (or a simple
+ * request) — the deep architectural thinking already happened in the planner,
+ * so even complex builds cap at "high" here; "max" on top of a finished plan
+ * is redundant thinking time. Force any level with K3_BUILDER_EFFORT.
  */
 const BUILDER_EFFORTS: Record<TaskComplexity, K3ReasoningEffort> = {
   simple: 'low',
   standard: 'high',
-  complex: 'max',
+  complex: 'high',
+};
+
+/**
+ * Wall-clock hard limit for ONE builder response segment, scaled by
+ * complexity: a simple build must never sit silent for 15 minutes, while a
+ * complex one keeps room for long files. When the limit fires the segment
+ * aborts and the client's auto-resume continues from where it stopped.
+ * Generation is also token-capped (MAX_TOKENS per segment x
+ * MAX_RESPONSE_SEGMENTS). Override with BUILDER_SEGMENT_TIMEOUT_MS.
+ */
+const BUILDER_SEGMENT_TIMEOUTS: Record<TaskComplexity, number> = {
+  simple: 300_000, // 5 min
+  standard: 600_000, // 10 min
+  complex: 900_000, // 15 min
 };
 
 /** Signals that mark a build as having real backend/architecture weight. */
@@ -179,16 +193,17 @@ export function builderEffortFor(complexity: TaskComplexity, env?: Env): K3Reaso
 }
 
 /**
- * Wall-clock hard limit for ONE builder response segment. Generation is
- * already token-capped (MAX_TOKENS per segment x MAX_RESPONSE_SEGMENTS);
- * this is the backstop so a stalled/over-thinking stream dies and the
- * client's auto-resume takes over instead of hanging forever.
- * Override via BUILDER_SEGMENT_TIMEOUT_MS (milliseconds).
+ * Wall-clock hard limit for ONE builder response segment (scaled by
+ * complexity). BUILDER_SEGMENT_TIMEOUT_MS overrides all tiers.
  */
-export function builderSegmentTimeoutMs(env?: Env): number {
+export function builderSegmentTimeoutMs(complexity: TaskComplexity, env?: Env): number {
   const parsed = Number(env?.BUILDER_SEGMENT_TIMEOUT_MS ?? processEnv.BUILDER_SEGMENT_TIMEOUT_MS);
 
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 900_000;
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+
+  return BUILDER_SEGMENT_TIMEOUTS[complexity];
 }
 
 function readEffortOverride(raw?: string): K3ReasoningEffort | null {

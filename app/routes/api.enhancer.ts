@@ -32,7 +32,13 @@ async function enhancerAction({ context, request }: ActionFunctionArgs) {
       ],
       context.cloudflare.env,
       undefined,
-      getAPIKey(context.cloudflare.env, request),
+      /**
+       * Prompt enhancement is always a small task: force low effort so it
+       * stays fast even when the wrapped user prompt mentions complex
+       * features (auth, database, ...) that would otherwise inflate the
+       * complexity estimate.
+       */
+      'low',
     );
 
     const transformStream = new TransformStream({
