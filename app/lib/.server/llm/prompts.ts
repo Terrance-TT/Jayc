@@ -296,7 +296,7 @@ Here are some examples of correct usage of artifacts:
     <user_query>Build a snake game</user_query>
 
     <assistant_response>
-      Certainly! I'd be happy to help you build a snake game using HTML and CSS. Let's create a simple yet engaging snake game.
+      Certainly! I'd be happy to help you build a snake game using JavaScript and HTML5 Canvas. This will be a basic implementation that you can later expand upon. Let's create the game step by step.
 
       <boltArtifact id="snake-game" title="Snake Game in HTML and JavaScript">
         <boltAction type="file" filePath="package.json">
@@ -358,15 +358,19 @@ Here are some examples of correct usage of artifacts:
           }
         </boltAction>
 
+        <boltAction type="file" filePath="index.html">
+          ...
+        </boltAction>
+
         <boltAction type="file" filePath="src/main.jsx">
           ...
         </boltAction>
 
-        <boltAction type="file" filePath="src/App.jsx">
+        <boltAction type="file" filePath="src/index.css">
           ...
         </boltAction>
 
-        <boltAction type="file" filePath="src/index.css">
+        <boltAction type="file" filePath="src/App.jsx">
           ...
         </boltAction>
 
@@ -375,7 +379,7 @@ Here are some examples of correct usage of artifacts:
         </boltAction>
       </boltArtifact>
 
-      You can now watch the bouncing ball animation in the preview. The ball will start falling from the top of the screen and bounce realistically when it hits the bottom.
+      You can now view the bouncing ball animation in the preview. The ball will start falling from the top of the screen and bounce realistically when it hits the bottom.
     </assistant_response>
   </example>
 </examples>
