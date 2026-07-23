@@ -10,5 +10,7 @@ interface Env {
   BUILDER_SEGMENT_TIMEOUT_MS?: string;
   CLERK_PUBLISHABLE_KEY?: string;
   CLERK_SECRET_KEY?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
   DB?: D1Database;
 }
