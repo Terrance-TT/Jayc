@@ -9,7 +9,6 @@ export const Preview = memo(() => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [activePreviewIndex, setActivePreviewIndex] = useState(0);
   const [isPortDropdownOpen, setIsPortDropdownOpen] = useState(false);
-  const [isPreviewBannerDismissed, setIsPreviewBannerDismissed] = useState(false);
   const hasSelectedPreview = useRef(false);
   const previews = useStore(workbenchStore.previews);
   const activePreview = previews[activePreviewIndex];
@@ -73,21 +72,9 @@ export const Preview = memo(() => {
   };
 
   const openInNewTab = () => {
-    if (!activePreview) {
-      return;
+    if (iframeUrl) {
+      window.open(iframeUrl, '_blank', 'noopener,noreferrer');
     }
-
-    /*
-     * WebContainer preview URLs 404 when opened as a top-level tab — they only
-     * resolve inside an iframe on the editor's origin. Route through the
-     * same-origin wrapper page instead, which embeds the preview in a
-     * full-page iframe. The full URL is passed along so any WebContainer URL
-     * format works; fall back to the base URL if the address bar holds an
-     * invalid entry.
-     */
-    const targetUrl = iframeUrl && validateUrl(iframeUrl) ? iframeUrl : activePreview.baseUrl;
-
-    window.open(`/webcontainer/preview?url=${encodeURIComponent(targetUrl)}`, '_blank');
   };
 
   return (
@@ -97,12 +84,7 @@ export const Preview = memo(() => {
       )}
       <div className="bg-bolt-elements-background-depth-2 p-2 flex items-center gap-1.5">
         <IconButton icon="i-ph:arrow-clockwise" title="Reload preview" onClick={reloadPreview} />
-        <IconButton
-          icon="i-ph:arrow-square-out"
-          title="Open preview in new tab"
-          disabled={!activePreview}
-          onClick={openInNewTab}
-        />
+        <IconButton icon="i-ph:arrow-square-out" title="Open preview in new tab" disabled={!iframeUrl} onClick={openInNewTab} />
         <div
           className="flex items-center gap-1 flex-grow bg-bolt-elements-preview-addressBar-background border border-bolt-elements-borderColor text-bolt-elements-preview-addressBar-text rounded-full px-3 py-1 text-sm hover:bg-bolt-elements-preview-addressBar-backgroundHover hover:focus-within:bg-bolt-elements-preview-addressBar-backgroundActive focus-within:bg-bolt-elements-preview-addressBar-backgroundActive
         focus-within-border-bolt-elements-borderColorActive focus-within:text-bolt-elements-preview-addressBar-textActive"
@@ -137,19 +119,6 @@ export const Preview = memo(() => {
           />
         )}
       </div>
-      {!isPreviewBannerDismissed && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-bolt-elements-background-depth-2 text-bolt-elements-textSecondary text-xs">
-          <div className="i-ph:warning-bold text-yellow-500 shrink-0" />
-          <span className="flex-1">
-            Development preview — do not publish. Secrets in your .env are visible to this app.
-          </span>
-          <button
-            className="i-ph:x shrink-0 hover:text-bolt-elements-textPrimary"
-            title="Dismiss"
-            onClick={() => setIsPreviewBannerDismissed(true)}
-          />
-        </div>
-      )}
       <div className="flex-1 border-t border-bolt-elements-borderColor">
         {activePreview ? (
           <iframe ref={iframeRef} className="border-none w-full h-full bg-white" src={iframeUrl} />
