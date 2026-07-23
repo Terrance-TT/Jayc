@@ -31,7 +31,7 @@ export interface DependencyNode {
   unresolved: string[];
   /** names this file exports (functions, classes, constants, types, 'default') */
   provides: string[];
-  /** short factual description derived from the file's own contents */
+  /** short plain-English description derived from the file's own contents */
   summary: string;
   /** true when the node only exists because another file imports a path that does not exist */
   missing: boolean;
@@ -42,8 +42,10 @@ export interface DependencyEdge {
   source: string;
   /** the file being imported */
   target: string;
-  /** factual descriptions of what the source takes from the target, e.g. "imports {Router, helper}" */
+  /** plain-English descriptions of what the source takes from the target, e.g. "takes Router, helper" */
   labels: string[];
+  /** how much the source takes from the target — the number of distinct named things flowing across it (at least 1) */
+  weight: number;
 }
 
 export interface DependencyGraph {
@@ -118,6 +120,7 @@ export function buildDependencyGraph(files: FileMap | undefined): DependencyGrap
   const nodeByPath = new Map<string, DependencyNode>();
   const edges: DependencyEdge[] = [];
   const edgeByKey = new Map<string, DependencyEdge>();
+  const edgeNamesByKey = new Map<string, Set<string>>();
   const externalPackages = new Set<string>();
   let unresolvedCount = 0;
 
@@ -136,7 +139,7 @@ export function buildDependencyGraph(files: FileMap | undefined): DependencyGrap
     getOrCreateNode(path, false);
   }
 
-  const addEdge = (source: string, target: string, label: string) => {
+  const addEdge = (source: string, target: string, label: string, names: string[]) => {
     if (source === target) {
       return;
     }
@@ -148,7 +151,7 @@ export function buildDependencyGraph(files: FileMap | undefined): DependencyGrap
     let edge = edgeByKey.get(key);
 
     if (!edge) {
-      edge = { source, target, labels: [] };
+      edge = { source, target, labels: [], weight: 1 };
       edgeByKey.set(key, edge);
       edges.push(edge);
     }
@@ -156,6 +159,19 @@ export function buildDependencyGraph(files: FileMap | undefined): DependencyGrap
     if (!edge.labels.includes(label)) {
       edge.labels.push(label);
     }
+
+    let edgeNames = edgeNamesByKey.get(key);
+
+    if (!edgeNames) {
+      edgeNames = new Set<string>();
+      edgeNamesByKey.set(key, edgeNames);
+    }
+
+    for (const name of names) {
+      edgeNames.add(name);
+    }
+
+    edge.weight = Math.max(1, edgeNames.size);
 
     if (!sourceNode.imports.includes(target)) {
       sourceNode.imports.push(target);
@@ -186,7 +202,7 @@ export function buildDependencyGraph(files: FileMap | undefined): DependencyGrap
 
       switch (resolution.kind) {
         case 'internal': {
-          addEdge(path, resolution.path, labelFor(imported.kind, imported.names));
+          addEdge(path, resolution.path, labelFor(imported.kind, imported.names), imported.names);
           break;
         }
         case 'external': {
@@ -206,7 +222,7 @@ export function buildDependencyGraph(files: FileMap | undefined): DependencyGrap
            * Broken imports are drawn as dashed "missing" nodes so the graph
            * honestly shows connections that point at files which do not exist.
            */
-          addEdge(path, resolution.attempted, labelFor(imported.kind, imported.names));
+          addEdge(path, resolution.attempted, labelFor(imported.kind, imported.names), imported.names);
           break;
         }
       }
@@ -246,7 +262,7 @@ function createNode(path: string, missing: boolean): DependencyNode {
     external: [],
     unresolved: [],
     provides: [],
-    summary: missing ? 'Imported by other files, but missing from the project' : '',
+    summary: missing ? 'Other files expect this file, but it does not exist' : '',
     missing,
   };
 }
@@ -402,98 +418,100 @@ function extractExports(content: string, ext: string): string[] {
 }
 
 /**
- * A short, strictly factual description derived from the file's own name,
- * extension and contents. It never claims more than what is visible in the
- * source (e.g. "contains JSX" → React component module).
+ * A short, plain-English description derived from the file's own name,
+ * extension and contents — written for people who don't code. It never
+ * claims more than what is visible in the source (e.g. a file that returns
+ * markup is described as drawing part of the screen).
  */
 function summarize(filePath: string, content: string, ext: string, provides: string[]): string {
   const name = filePath.split('/').pop() ?? '';
 
   if (MARKUP_EXTENSIONS.has(ext)) {
-    return 'Entry HTML page';
+    return 'The page the browser opens first — the whole app starts here';
   }
 
   if (STYLE_EXTENSIONS.has(ext)) {
-    return 'Stylesheet';
+    return 'Styling — colors, spacing and fonts';
   }
 
   if (ext === 'json') {
     if (name === 'package.json') {
-      return 'npm package manifest (scripts & dependencies)';
+      return "The app's ID card — its name, its commands, and the list of tools it needs";
     }
 
     if (name.startsWith('tsconfig')) {
-      return 'TypeScript compiler configuration';
+      return 'Settings for how the code is checked and built';
     }
 
-    return 'JSON data / configuration';
+    return 'Stored settings / data';
   }
 
   if (DOC_EXTENSIONS.has(ext)) {
-    return 'Documentation';
+    return 'Notes for humans — no working code';
   }
 
   if (!CODE_EXTENSIONS.has(ext)) {
-    return 'Static asset';
+    return 'A file the app uses as-is (image, icon, font, …)';
   }
 
   const usesEnvVars = /process\.env\.|import\.meta\.env\./.test(content);
-  const envSuffix = usesEnvVars ? ' · reads env vars' : '';
+  const envSuffix = usesEnvVars ? ' · uses secret keys / settings' : '';
 
   if (/\.(test|spec)\.[jt]sx?$/.test(name)) {
-    return `Test file${envSuffix}`;
+    return `Automatic checks that the app works${envSuffix}`;
   }
 
   if (/^(?:vite|next|nuxt|astro|remix|tailwind|postcss|eslint|jest|vitest|rollup|webpack)\.config/.test(name)) {
-    return `Build / tool configuration${envSuffix}`;
+    return `Settings for the build tools${envSuffix}`;
   }
 
   if (/(?:express\(\)|new Hono\b|fastify\(|createServer\()/.test(content)) {
-    return `HTTP server${envSuffix}`;
+    return `The server — listens for requests and answers them${envSuffix}`;
   }
 
   const hasValueExports = /^\s*export\s+(?:async\s+)?(?:function|class|const|let|var|enum|default)\b/m.test(content);
   const hasTypeExports = /^\s*export\s+(?:interface|type)\b/m.test(content);
 
   if (hasTypeExports && !hasValueExports) {
-    return 'Type definitions';
+    return 'A dictionary of data shapes — describes what the data looks like, no working code';
   }
 
   const hasJsx = /<[A-Z][\w$.]*[\s/>]/.test(content) || /return\s*\(?\s*<[a-z]/.test(content);
 
   if (hasJsx) {
-    return `React component module${envSuffix}`;
+    return `A piece of the screen — draws part of what the user sees${envSuffix}`;
   }
 
   const hooks = provides.filter((provided) => /^use[A-Z]/.test(provided));
 
   if (hooks.length > 0) {
-    return `React hook(s): ${hooks.join(', ')}${envSuffix}`;
+    return `Reusable logic that pieces of the screen can share (${hooks.join(', ')})${envSuffix}`;
   }
 
-  return provides.length > 0 ? `Module exporting ${provides.length} item(s)${envSuffix}` : `Module${envSuffix}`;
+  return provides.length > 0
+    ? `A toolbox — provides ${provides.length} tool(s) that other files can use${envSuffix}`
+    : `A code file${envSuffix}`;
 }
 
 function labelFor(kind: ImportKind, names: string[]): string {
-  const formatted = names.length > 0 ? ` {${names.join(', ')}}` : '';
+  const formatted = names.length > 0 ? ` ${names.join(', ')}` : '';
 
   switch (kind) {
     case 'import':
-      return `imports${formatted}`;
-    case 'side-effect':
-      return 'imports for side effects';
     case 'require':
-      return `requires${formatted}`;
+      return names.length > 0 ? `takes${formatted}` : 'takes code';
+    case 'side-effect':
+      return 'runs it automatically when the app starts';
     case 'dynamic':
-      return 'lazy-loads';
+      return 'loads it only when needed';
     case 're-export':
-      return `re-exports${formatted}`;
+      return names.length > 0 ? `passes${formatted} through` : 'passes code through';
     case 'style':
-      return 'imports the stylesheet';
+      return 'uses these styles';
     case 'script':
-      return 'loads the script';
+      return 'starts the app from this file';
     case 'link':
-      return 'links the resource';
+      return 'loads this resource';
   }
 }
 
