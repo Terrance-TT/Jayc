@@ -26,6 +26,7 @@ export default function WebContainerPreview() {
   const { previewUrl } = useLoaderData<typeof loader>();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [iframeUrl, setIframeUrl] = useState('');
+  const [isPreviewBannerDismissed, setIsPreviewBannerDismissed] = useState(false);
 
   useEffect(() => {
     setIframeUrl(previewUrl);
@@ -36,11 +37,24 @@ export default function WebContainerPreview() {
   }, [previewUrl]);
 
   return (
-    <div className="w-full h-full">
+    <div className="w-full h-full flex flex-col">
+      {!isPreviewBannerDismissed && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-bolt-elements-background-depth-2 border-b border-bolt-elements-borderColor text-bolt-elements-textSecondary text-xs">
+          <div className="i-ph:warning-bold text-yellow-500 shrink-0" />
+          <span className="flex-1">
+            Development preview — do not publish. Secrets in your .env are visible to this app.
+          </span>
+          <button
+            className="i-ph:x shrink-0 hover:text-bolt-elements-textPrimary"
+            title="Dismiss"
+            onClick={() => setIsPreviewBannerDismissed(true)}
+          />
+        </div>
+      )}
       <iframe
         ref={iframeRef}
         title="WebContainer Preview"
-        className="w-full h-full border-none"
+        className="w-full flex-1 border-none"
         sandbox="allow-scripts allow-forms allow-popups allow-modals allow-storage-access-by-user-activation allow-same-origin"
         allow="cross-origin-isolated"
         loading="eager"

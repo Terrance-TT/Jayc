@@ -9,6 +9,7 @@ export const Preview = memo(() => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [activePreviewIndex, setActivePreviewIndex] = useState(0);
   const [isPortDropdownOpen, setIsPortDropdownOpen] = useState(false);
+  const [isPreviewBannerDismissed, setIsPreviewBannerDismissed] = useState(false);
   const hasSelectedPreview = useRef(false);
   const previews = useStore(workbenchStore.previews);
   const activePreview = previews[activePreviewIndex];
@@ -136,6 +137,19 @@ export const Preview = memo(() => {
           />
         )}
       </div>
+      {!isPreviewBannerDismissed && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-bolt-elements-background-depth-2 text-bolt-elements-textSecondary text-xs">
+          <div className="i-ph:warning-bold text-yellow-500 shrink-0" />
+          <span className="flex-1">
+            Development preview — do not publish. Secrets in your .env are visible to this app.
+          </span>
+          <button
+            className="i-ph:x shrink-0 hover:text-bolt-elements-textPrimary"
+            title="Dismiss"
+            onClick={() => setIsPreviewBannerDismissed(true)}
+          />
+        </div>
+      )}
       <div className="flex-1 border-t border-bolt-elements-borderColor">
         {activePreview ? (
           <iframe ref={iframeRef} className="border-none w-full h-full bg-white" src={iframeUrl} />
