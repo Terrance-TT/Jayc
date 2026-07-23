@@ -3,9 +3,6 @@ import { ClientOnly } from 'remix-utils/client-only';
 import { chatStore } from '~/lib/stores/chat';
 import { classNames } from '~/utils/classNames';
 import { HeaderActionButtons } from './HeaderActionButtons.client';
-import { SecretsPanel } from './SecretsPanel.client';
-import { ConnectorsPanel } from './ConnectorsPanel.client';
-import { AuthButton } from './AuthButton.client';
 import { ChatDescription } from '~/lib/persistence/ChatDescription.client';
 
 export function Header() {
@@ -30,12 +27,6 @@ export function Header() {
       <span className="flex-1 px-4 truncate text-center text-bolt-elements-textPrimary">
         <ClientOnly>{() => <ChatDescription />}</ClientOnly>
       </span>
-      <div className="mr-2">
-        <ClientOnly>{() => <ConnectorsPanel />}</ClientOnly>
-      </div>
-      <div className="mr-2">
-        <ClientOnly>{() => <SecretsPanel />}</ClientOnly>
-      </div>
       {chat.started && (
         <ClientOnly>
           {() => (
@@ -45,9 +36,6 @@ export function Header() {
           )}
         </ClientOnly>
       )}
-      <div>
-        <ClientOnly>{() => <AuthButton />}</ClientOnly>
-      </div>
     </header>
   );
 }
