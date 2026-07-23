@@ -44,13 +44,18 @@ export async function action({ request }: ActionFunctionArgs) {
     const user = (await userRes.json()) as { login: string };
     const owner = user.login;
 
-    // 2. create the repo (422 = already exists — then we just push to it)
+    /*
+     * 2. create the repo WITH an initial commit (auto_init) — a completely
+     *    empty repository rejects Git Data API calls with
+     *    "409 Git Repository is empty"
+     *    (422 = repo already exists — then we just push to it)
+     */
     const createRes = await gh(token, '/user/repos', {
       method: 'POST',
       body: JSON.stringify({
         name: repoName,
         private: body.isPrivate !== false,
-        auto_init: false,
+        auto_init: true,
         description: 'Built with Jayc',
       }),
     });
@@ -70,20 +75,16 @@ export async function action({ request }: ActionFunctionArgs) {
       branch = repo.default_branch || 'main';
     }
 
-    let parentCommitSha: string | undefined;
-    let baseTreeSha: string | undefined;
+    let head = await readBranchHead(token, owner, repoName, branch);
 
-    const refRes = await gh(token, `/repos/${owner}/${repoName}/git/ref/heads/${branch}`);
-
-    if (refRes.ok) {
-      const ref = (await refRes.json()) as { object: { sha: string } };
-      parentCommitSha = ref.object.sha;
-
-      const parentRes = await gh(token, `/repos/${owner}/${repoName}/git/commits/${parentCommitSha}`);
-
-      if (parentRes.ok) {
-        baseTreeSha = ((await parentRes.json()) as { tree: { sha: string } }).tree.sha;
-      }
+    if (!head) {
+      /*
+       * the repo exists but has zero commits (e.g. the user created it
+       * manually on github.com) — seed it with a first commit so the Git
+       * Data API accepts blobs
+       */
+      await createInitialCommit(token, owner, repoName, branch);
+      head = await readBranchHead(token, owner, repoName, branch);
     }
 
     // 4. upload every file as a blob, in small parallel batches
@@ -105,7 +106,7 @@ export async function action({ request }: ActionFunctionArgs) {
     // 5. tree -> commit -> point the branch at it
     const treeRes = await gh(token, `/repos/${owner}/${repoName}/git/trees`, {
       method: 'POST',
-      body: JSON.stringify({ base_tree: baseTreeSha, tree: treeEntries }),
+      body: JSON.stringify({ base_tree: head?.treeSha, tree: treeEntries }),
     });
 
     if (!treeRes.ok) {
@@ -117,9 +118,9 @@ export async function action({ request }: ActionFunctionArgs) {
     const commitRes = await gh(token, `/repos/${owner}/${repoName}/git/commits`, {
       method: 'POST',
       body: JSON.stringify({
-        message: parentCommitSha ? 'Update from Jayc' : 'Initial commit — built with Jayc',
+        message: head ? 'Update from Jayc' : 'Initial commit — built with Jayc',
         tree: tree.sha,
-        parents: parentCommitSha ? [parentCommitSha] : [],
+        parents: head ? [head.commitSha] : [],
       }),
     });
 
@@ -129,7 +130,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
     const commit = (await commitRes.json()) as { sha: string };
 
-    const refResult = parentCommitSha
+    const refResult = head
       ? await gh(token, `/repos/${owner}/${repoName}/git/refs/heads/${branch}`, {
           method: 'PATCH',
           body: JSON.stringify({ sha: commit.sha }),
@@ -165,6 +166,59 @@ function sleep(ms: number): Promise<void> {
 
 function toBase64(value: string): string {
   return btoa(unescape(encodeURIComponent(value)));
+}
+
+interface BranchHead {
+  commitSha: string;
+  treeSha: string;
+}
+
+/** the branch's latest commit + its tree, or undefined when the branch doesn't exist yet */
+async function readBranchHead(
+  token: string,
+  owner: string,
+  repo: string,
+  branch: string,
+): Promise<BranchHead | undefined> {
+  const refRes = await gh(token, `/repos/${owner}/${repo}/git/ref/heads/${branch}`);
+
+  if (!refRes.ok) {
+    return undefined;
+  }
+
+  const ref = (await refRes.json()) as { object: { sha: string } };
+  const commitSha = ref.object.sha;
+
+  const commitRes = await gh(token, `/repos/${owner}/${repo}/git/commits/${commitSha}`);
+
+  if (!commitRes.ok) {
+    return undefined;
+  }
+
+  const commit = (await commitRes.json()) as { tree: { sha: string } };
+
+  return { commitSha, treeSha: commit.tree.sha };
+}
+
+/*
+ * Seed an empty repository with a first commit via the Contents API — the
+ * only write endpoint that works on a repo with zero commits.
+ */
+async function createInitialCommit(token: string, owner: string, repo: string, branch: string): Promise<void> {
+  const response = await gh(token, `/repos/${owner}/${repo}/contents/README.md`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      message: 'Initial commit',
+      content: toBase64(`# ${repo}\n\nBuilt with Jayc\n`),
+      branch,
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+
+    throw new Error(`Could not create the initial commit: ${detail.slice(0, 200)}`);
+  }
 }
 
 /*
