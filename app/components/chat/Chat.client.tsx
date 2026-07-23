@@ -11,6 +11,7 @@ import { workbenchStore } from '~/lib/stores/workbench';
 import { fileModificationsToHTML } from '~/utils/diff';
 import { cubicEasingFn } from '~/utils/easings';
 import { createScopedLogger, renderLogger } from '~/utils/logger';
+import { looksLikeSecret } from '~/utils/secretPatterns';
 import { BaseChat } from './BaseChat';
 
 const toastAnimation = cssTransition({
@@ -324,6 +325,13 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
       return;
     }
 
+    /*
+     * Security: a secret pasted straight into chat - or typed into a code file, which then
+     * travels to the model inside the file-modification diff - is sent to the AI and stored
+     * in chat history. We warn the user below, but never block the send.
+     */
+    let secretLeak = looksLikeSecret(_input);
+
     // A fresh user request resets the auto-resume bookkeeping.
     resumeAttempts.current = 0;
     manualStopRef.current = false;
@@ -351,6 +359,9 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
     if (fileModifications !== undefined) {
       const diff = fileModificationsToHTML(fileModifications);
 
+      // A secret typed into a code file rides along inside this diff.
+      secretLeak = secretLeak || looksLikeSecret(diff ?? '');
+
       /**
        * If we have file modifications we append a new user message manually since we have to prefix
        * the user input with the file modifications and we don't want the new user input to appear
@@ -367,6 +378,16 @@ export const ChatImpl = memo(({ initialMessages, storeMessageHistory }: ChatProp
       workbenchStore.resetAllFileModifications();
     } else {
       append({ role: 'user', content: _input });
+    }
+
+    /*
+     * Non-blocking warning: the message has already been sent above, so the user can still
+     * proceed - we only surface the risk.
+     */
+    if (secretLeak) {
+      toast.warn(
+        'That looks like a secret/API key. Move it to your .env or Connectors panel — anything in chat or code files is sent to the AI and stored in chat history.',
+      );
     }
 
     setInput('');
