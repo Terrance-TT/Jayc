@@ -29,11 +29,11 @@ interface BaseChatProps {
 }
 
 const EXAMPLE_PROMPTS = [
-  { text: 'Build a todo app in React using Tailwind' },
-  { text: 'Build a simple blog using Astro' },
-  { text: 'Create a cookie consent form using Material UI' },
-  { text: 'Make a space invaders game' },
-  { text: 'How do I center a div?' },
+  { text: 'I need a todo app with team collaboration' },
+  { text: 'My users cant log in securely — help me fix auth' },
+  { text: 'I need to accept payments but the checkout keeps breaking' },
+  { text: 'My app is slow because everything is in one file' },
+  { text: 'I need a dashboard to show real-time data to my team' },
 ];
 
 const TEXTAREA_MIN_HEIGHT = 76;
@@ -76,10 +76,10 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
             {!chatStarted && (
               <div id="intro" className="mt-[26vh] max-w-chat mx-auto">
                 <h1 className="text-5xl text-center font-bold text-bolt-elements-textPrimary mb-2">
-                  Where ideas begin
+                  What's the problem?
                 </h1>
                 <p className="mb-4 text-center text-bolt-elements-textSecondary">
-                  Bring ideas to life in seconds or get help on existing projects.
+                  Describe what you're building — we'll architect it properly.
                 </p>
               </div>
             )}
@@ -133,7 +133,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                       minHeight: TEXTAREA_MIN_HEIGHT,
                       maxHeight: TEXTAREA_MAX_HEIGHT,
                     }}
-                    placeholder="How can Jayc help you today?"
+                    placeholder="Describe the problem you need solved..."
                     translate="no"
                   />
                   <ClientOnly>
