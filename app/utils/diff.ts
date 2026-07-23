@@ -2,6 +2,16 @@ import { createTwoFilesPatch } from 'diff';
 import type { FileMap } from '~/lib/stores/files';
 import { MODIFICATIONS_TAG_NAME } from './constants';
 
+/*
+ * Secret-bearing files (e.g. `.env`, `.env.local`) must never be sent to the LLM
+ * or persisted in chat history. They live only in the user's WebContainer.
+ */
+const SENSITIVE_FILE_PATTERN = /(?:^|\/)\.env(?:\.[^/]*)?$/;
+
+function isSensitiveFilePath(filePath: string): boolean {
+  return SENSITIVE_FILE_PATTERN.test(filePath);
+}
+
 export const modificationsRegex = new RegExp(
   `^<${MODIFICATIONS_TAG_NAME}>[\\s\\S]*?<\\/${MODIFICATIONS_TAG_NAME}>\\s+`,
   'g',
@@ -20,6 +30,11 @@ export function computeFileModifications(files: FileMap, modifiedFiles: Map<stri
   let hasModifiedFiles = false;
 
   for (const [filePath, originalContent] of modifiedFiles) {
+    if (isSensitiveFilePath(filePath)) {
+      // skip secret-bearing files entirely - they never leave the browser
+      continue;
+    }
+
     const file = files[filePath];
 
     if (file?.type !== 'file') {
